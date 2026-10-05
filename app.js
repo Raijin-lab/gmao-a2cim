@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 // --- CONFIGURATION FIREBASE ---
 const firebaseConfig = {
@@ -14,7 +14,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// --- NAVIGATION ENTRE LES VUES (MENU LATÉRAL ET MOBILE) ---
+// --- NAVIGATION ENTRE LES VUES ---
 const navLinks = document.querySelectorAll('.nav-link');
 const appViews = document.querySelectorAll('.app-view');
 
@@ -23,19 +23,14 @@ navLinks.forEach(link => {
         e.preventDefault();
         const targetView = link.getAttribute('data-view');
 
-        // Masquer toutes les vues
         appViews.forEach(view => view.classList.add('hidden'));
-
-        // Afficher la vue ciblée
         document.getElementById(`view-${targetView}`).classList.remove('hidden');
 
-        // Mettre à jour les styles du menu latéral et mobile
         navLinks.forEach(l => {
             l.classList.remove('bg-brand-800', 'text-white');
             l.classList.add('text-slate-400');
         });
         
-        // Activer les liens correspondants
         document.querySelectorAll(`[data-view="${targetView}"]`).forEach(activeL => {
             activeL.classList.add('bg-brand-800', 'text-white');
             activeL.classList.remove('text-slate-400');
@@ -96,7 +91,19 @@ document.getElementById('addInterventionForm').addEventListener('submit', async 
     }
 });
 
-// --- SYNCHRONISATION EN TEMPS RÉEL ---
+// --- SUPPRIMER UNE INTERVENTION ---
+window.supprimerIntervention = async function(id) {
+    if (confirm("Voulez-vous vraiment supprimer cette intervention ?")) {
+        try {
+            await deleteDoc(doc(db, "interventions", id));
+        } catch (error) {
+            console.error("Erreur lors de la suppression : ", error);
+            alert("Erreur lors de la suppression de l'intervention.");
+        }
+    }
+};
+
+// --- SYNCHRONISATION EN TEMPS RÉEL ET AFFICHAGE AVEC BOUTON SUPPRIMER ---
 const q = query(collection(db, "interventions"), orderBy("date", "asc"));
 onSnapshot(q, (snapshot) => {
     const container = document.getElementById('tasks-container');
@@ -117,8 +124,9 @@ onSnapshot(q, (snapshot) => {
         return;
     }
     
-    snapshot.forEach((doc) => {
-        const data = doc.data();
+    snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const docId = docSnap.id; // ID unique du document dans Firebase
 
         if (data.statut === "Planifié") planifieCount++;
         if (data.statut === "En retard") retardCount++;
@@ -134,28 +142,34 @@ onSnapshot(q, (snapshot) => {
         const initialTech = data.technicien ? data.technicien.charAt(0).toUpperCase() : '?';
         
         const cardHTML = `
-            <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex cursor-pointer hover:shadow-md transition-shadow active:scale-[0.98]">
-                <div class="w-2 ${config.bg} ${config.border} border-l-4"></div>
-                <div class="p-4 flex-1 flex flex-col sm:flex-row sm:items-center justify-between">
-                    <div class="mb-3 sm:mb-0">
-                        <div class="flex items-center space-x-2 mb-1">
-                            <span class="text-xs font-bold text-slate-500 uppercase">${data.client}</span>
-                            <span class="w-1 h-1 rounded-full bg-slate-300"></span>
-                            <span class="text-xs text-slate-500">${dateAffichee}</span>
+            <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex items-center justify-between hover:shadow-md transition-shadow">
+                <div class="flex items-center flex-1">
+                    <div class="w-2 self-stretch ${config.bg} ${config.border} border-l-4"></div>
+                    <div class="p-4 flex-1 flex flex-col sm:flex-row sm:items-center justify-between">
+                        <div class="mb-3 sm:mb-0">
+                            <div class="flex items-center space-x-2 mb-1">
+                                <span class="text-xs font-bold text-slate-500 uppercase">${data.client}</span>
+                                <span class="w-1 h-1 rounded-full bg-slate-300"></span>
+                                <span class="text-xs text-slate-500">${dateAffichee}</span>
+                            </div>
+                            <h3 class="font-bold text-slate-800 text-sm md:text-base">${data.machine}</h3>
+                            <p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-wrench mr-1"></i> ${data.type}</p>
                         </div>
-                        <h3 class="font-bold text-slate-800 text-sm md:text-base">${data.machine}</h3>
-                        <p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-wrench mr-1"></i> ${data.type}</p>
-                    </div>
-                    <div class="flex items-center justify-between sm:justify-end sm:space-x-4">
-                        <div class="flex items-center space-x-2">
-                            <div class="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600">${initialTech}</div>
-                            <span class="text-xs font-medium text-slate-600 hidden md:inline-block">${data.technicien}</span>
-                        </div>
-                        <div class="px-2.5 py-1 rounded-md flex items-center space-x-1 ${config.bg} ${config.text} border ${config.border} border-opacity-20 text-[10px] font-bold uppercase tracking-wider">
-                            <i class="fa-solid ${config.icon}"></i> <span>${data.statut}</span>
+                        <div class="flex items-center space-x-4">
+                            <div class="flex items-center space-x-2">
+                                <div class="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600">${initialTech}</div>
+                                <span class="text-xs font-medium text-slate-600 hidden md:inline-block">${data.technicien}</span>
+                            </div>
+                            <div class="px-2.5 py-1 rounded-md flex items-center space-x-1 ${config.bg} ${config.text} border ${config.border} border-opacity-20 text-[10px] font-bold uppercase tracking-wider">
+                                <i class="fa-solid ${config.icon}"></i> <span>${data.statut}</span>
+                            </div>
                         </div>
                     </div>
                 </div>
+                <!-- Bouton Supprimer -->
+                <button onclick="supprimerIntervention('${docId}')" class="p-4 text-slate-300 hover:text-red-500 transition-colors" title="Supprimer">
+                    <i class="fa-solid fa-trash-can text-base"></i>
+                </button>
             </div>
         `;
 
