@@ -239,7 +239,7 @@ document.getElementById('btnSetTermine').addEventListener('click', async () => {
     if (freq !== "Ponctuel") {
         const nouvelleDateStr = calculerProchaineDate(interventionData.date, freq);
         
-        // LA CRÉATION RESPECTE STRICTEMENT LES RÈGLES FIREBASE (client, machine, date, type, technicien, statut)
+        // LA CRÉATION RESPECTE STRICTEMENT LES RÈGLES FIREBASE
         await addDoc(collection(db, "interventions"), {
             client: interventionData.client, 
             machine: interventionData.machine,
@@ -354,7 +354,6 @@ if(document.getElementById('cancelModalBtn')) document.getElementById('cancelMod
 if(document.getElementById('addInterventionForm')) {
     document.getElementById('addInterventionForm').addEventListener('submit', async (e) => {
         e.preventDefault();
-        // LA CRÉATION RESPECTE STRICTEMENT LES RÈGLES FIREBASE
         await addDoc(collection(db, "interventions"), {
             client: document.getElementById('formClient').value,
             machine: document.getElementById('formMachine').value,
@@ -388,11 +387,26 @@ navLinks.forEach(link => {
     });
 });
 
-// Docs (Base PDF)
+// Docs (Base PDF - Restaurée Intégralement)
 const providerDocs = {
     "hypertherm": [{ name: "Manuel XPR170", file: "XPR170_MANUAL_EN.pdf" }, { name: "Schéma Électrique", file: "schema-electrique.pdf" }],
-    "messer": []
+    "beckhoff": [],
+    "cybelec": [],
+    "messer": [],
+    "soprolec": [],
+    "fiessler": [],
+    "gullco": [],
+    "sturmer": [],
+    "euroboor": [],
+    "behringer": [],
+    "picot": [],
+    "dimeco": [],
+    "cesurbend": [],
+    "baisheng": [],
+    "ermaksan": [],
+    "vernet": []
 };
+
 const docsModal = document.getElementById('docsModal');
 if (document.getElementById('closeDocsModal')) document.getElementById('closeDocsModal').addEventListener('click', () => { docsModal.classList.add('hidden'); });
 document.querySelectorAll('.doc-folder').forEach(folder => {
