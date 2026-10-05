@@ -1,12 +1,29 @@
-const CACHE_NAME = 'gmao-a2cim-v1';
+// Incrémente cette version (ex: v2, v3) à chaque fois que tu veux forcer la mise à jour chez tout le monde
+const CACHE_NAME = 'gmao-a2cim-v2';
 
-// Installation du Service Worker
+// Installation : Force le nouveau Service Worker à s'activer immédiatement
 self.addEventListener('install', (e) => {
-    console.log('[Service Worker] Installation terminée');
     self.skipWaiting();
 });
 
-// Intercepter les requêtes pour le mode hors-ligne
+// Activation : Supprime instantanément tous les anciens caches stockés sur les téléphones
+self.addEventListener('activate', (e) => {
+    e.waitUntil(
+        caches.keys().then((keyList) => {
+            return Promise.all(keyList.map((key) => {
+                if (key !== CACHE_NAME) {
+                    console.log('[Service Worker] Suppression de l\'ancien cache :', key);
+                    return caches.delete(key);
+                }
+            }));
+        })
+    );
+    self.clients.claim();
+});
+
+// Récupération : Réseau d'abord, sinon cache
 self.addEventListener('fetch', (e) => {
-    // Pour l'instant, on laisse passer le réseau normal pour faciliter les tests
+    e.respondWith(
+        fetch(e.request).catch(() => caches.match(e.request))
+    );
 });
