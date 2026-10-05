@@ -37,6 +37,23 @@ if (pinForm) {
     });
 }
 
+// --- OUVERTURE DES DOSSIERS DE LA BASE DOCUMENTAIRE ---
+const docFolders = document.querySelectorAll('.doc-folder');
+docFolders.forEach(folder => {
+    folder.addEventListener('click', () => {
+        const folderName = folder.getAttribute('data-folder');
+        const fileName = folder.getAttribute('data-file');
+
+        if (folderName && fileName) {
+            // Ouvre directement le fichier PDF dans le sous-dossier correspondant sur GitHub
+            const pdfUrl = `docs/${folderName}/${fileName}`;
+            window.open(pdfUrl, '_blank');
+        } else {
+            alert(`Le dossier ${folderName} ne contient pas encore de document PDF configuré.`);
+        }
+    });
+});
+
 // --- NAVIGATION ENTRE LES VUES ---
 const navLinks = document.querySelectorAll('.nav-link');
 const appViews = document.querySelectorAll('.app-view');
