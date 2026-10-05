@@ -75,7 +75,7 @@ document.getElementById('addInterventionForm').addEventListener('submit', async 
             client: document.getElementById('formClient').value,
             machine: document.getElementById('formMachine').value,
             date: document.getElementById('formDate').value,
-            type: document.getElementById('formType').value,
+            type: document.getElementById('formType').value, // "Préventif" ou "Curatif"
             technicien: document.getElementById('formTech').value,
             statut: "Planifié",
             timestamp: serverTimestamp()
@@ -103,32 +103,33 @@ window.supprimerIntervention = async function(id) {
     }
 };
 
-// --- SYNCHRONISATION EN TEMPS RÉEL ET AFFICHAGE AVEC BOUTON SUPPRIMER ---
+// --- SYNCHRONISATION ET TRI AUTOMATIQUE (PRÉVENTIF VS CURATIF) ---
 const q = query(collection(db, "interventions"), orderBy("date", "asc"));
 onSnapshot(q, (snapshot) => {
-    const container = document.getElementById('tasks-container');
+    const dashboardContainer = document.getElementById('tasks-container');
     const planningContainer = document.getElementById('planning-container');
+    const curatifContainer = document.getElementById('curatif-container');
     
-    container.innerHTML = '';
+    dashboardContainer.innerHTML = '';
     planningContainer.innerHTML = '';
+    curatifContainer.innerHTML = '';
     
     let totalCount = snapshot.size;
-    let planifieCount = 0;
     let retardCount = 0;
     let enCoursCount = 0;
 
     if(snapshot.empty) {
-        container.innerHTML = '<p class="text-center text-slate-500 py-4">Aucune intervention planifiée.</p>';
-        planningContainer.innerHTML = '<p class="text-center text-slate-500 py-4">Aucune intervention dans le planning.</p>';
+        dashboardContainer.innerHTML = '<p class="text-center text-slate-500 py-4">Aucune intervention planifiée.</p>';
+        planningContainer.innerHTML = '<p class="text-center text-slate-500 py-4">Aucun préventif planifié.</p>';
+        curatifContainer.innerHTML = '<p class="text-center text-slate-500 py-4">Aucun curatif planifié.</p>';
         updateKPIs(0, 0, 0);
         return;
     }
     
     snapshot.forEach((docSnap) => {
         const data = docSnap.data();
-        const docId = docSnap.id; // ID unique du document dans Firebase
+        const docId = docSnap.id;
 
-        if (data.statut === "Planifié") planifieCount++;
         if (data.statut === "En retard") retardCount++;
         if (data.statut === "En cours") enCoursCount++;
 
@@ -166,16 +167,26 @@ onSnapshot(q, (snapshot) => {
                         </div>
                     </div>
                 </div>
-                <!-- Bouton Supprimer -->
                 <button onclick="supprimerIntervention('${docId}')" class="p-4 text-slate-300 hover:text-red-500 transition-colors" title="Supprimer">
                     <i class="fa-solid fa-trash-can text-base"></i>
                 </button>
             </div>
         `;
 
-        container.innerHTML += cardHTML;
-        planningContainer.innerHTML += cardHTML;
+        // 1. Toujours afficher sur le Tableau de bord général
+        dashboardContainer.innerHTML += cardHTML;
+
+        // 2. Trier automatiquement selon le type choisi
+        if (data.type === "Préventif") {
+            planningContainer.innerHTML += cardHTML;
+        } else if (data.type === "Curatif") {
+            curatifContainer.innerHTML += cardHTML;
+        }
     });
+
+    // Si les sections triées sont vides, afficher un message propre
+    if (planningContainer.innerHTML === '') planningContainer.innerHTML = '<p class="text-center text-slate-500 py-4">Aucune intervention préventive.</p>';
+    if (curatifContainer.innerHTML === '') curatifContainer.innerHTML = '<p class="text-center text-slate-500 py-4">Aucune intervention curative.</p>';
 
     updateKPIs(totalCount, retardCount, enCoursCount);
 });
