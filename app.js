@@ -80,15 +80,13 @@ onSnapshot(q, (snapshot) => {
 
     if(snapshot.empty) {
         container.innerHTML = '<p class="text-center text-slate-500 py-4">Aucune intervention planifiée.</p>';
-        // Mise à jour des compteurs à 0
-        updateKPIs(0, 0, 0, 0);
+        updateKPIs(0, 0, 0);
         return;
     }
     
     snapshot.forEach((doc) => {
         const data = doc.data();
 
-        // Calcul des stats dynamiques
         if (data.statut === "Planifié") planifieCount++;
         if (data.statut === "En retard") retardCount++;
         if (data.statut === "En cours") enCoursCount++;
@@ -132,29 +130,23 @@ onSnapshot(q, (snapshot) => {
         `;
     });
 
-    // Mettre à jour les chiffres en haut de l'écran en temps réel
     updateKPIs(totalCount, retardCount, enCoursCount);
 });
 
-// Fonction pour actualiser dynamiquement les 4 cartes du haut
+// Fonction pour actualiser dynamiquement les compteurs du haut
 function updateKPIs(total, retard, enCours) {
-    const kpiElements = document.querySelectorAll('main .grid p.text-3xl');
-    if(kpiElements.length >= 4) {
-        kpiElements[0].textContent = total;   // À faire
-        kpiElements[1].textContent = retard;  // En retard
-        kpiElements[2].textContent = enCours; // En cours
-        // Calcul du taux de complétion fictif ou basé sur les stats
-        kpiElements[3].textContent = total > 0 ? "100%" : "0%"; 
-    }
+    document.getElementById('kpi-total').textContent = total;
+    document.getElementById('kpi-retard').textContent = retard;
+    document.getElementById('kpi-encours').textContent = enCours;
+    document.getElementById('kpi-taux').textContent = total > 0 ? "100%" : "0%";
 }
 
-// --- SERVICE WORKER AVEC PURGE AUTOMATIQUE DU CACHE ---
+// --- SERVICE WORKER ---
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
             .then(reg => {
                 console.log('Service Worker enregistré', reg);
-                // Force la vérification d'une mise à jour à chaque ouverture
                 reg.update();
             })
             .catch(err => console.error('Erreur Service Worker', err));
