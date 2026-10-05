@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1e3a8a">
     <title>GMAO pro A2CIM - Tableau de bord</title>
 
-    <link rel="stylesheet" href="style.css?v=13">
+    <link rel="stylesheet" href="style.css?v=14">
     <link rel="manifest" href="manifest.json">
 
     <!-- Tailwind CSS -->
@@ -29,7 +29,6 @@
     </script>
     
     <style>
-        /* Ajustements mineurs pour FullCalendar avec Tailwind */
         .fc { --fc-button-bg-color: #3b82f6; --fc-button-border-color: #3b82f6; --fc-button-hover-bg-color: #2563eb; --fc-button-hover-border-color: #2563eb; --fc-button-active-bg-color: #1e40af; }
         .fc-toolbar-title { font-size: 1.25rem !important; font-weight: 700 !important; color: #1e293b; }
         .fc-event { cursor: pointer; border: none !important; padding: 2px; border-radius: 4px; font-weight: 500; font-size: 0.75rem; }
@@ -97,7 +96,7 @@
 
         <main class="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 no-scrollbar w-full relative">
             
-            <!-- VUE 1 : TABLEAU DE BORD (inchangée) -->
+            <!-- VUE 1 : TABLEAU DE BORD -->
             <div id="view-dashboard" class="app-view">
                 <header class="mb-8">
                     <h2 class="text-2xl font-bold text-slate-800">Aperçu du Parc</h2>
@@ -105,9 +104,10 @@
                 </header>
 
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                    <!-- KPIs -->
                     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center">
                         <div class="flex items-center justify-between mb-2">
-                            <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">À faire ce mois</h3>
+                            <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">À faire</h3>
                             <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600"><i class="fa-solid fa-calendar-day"></i></div>
                         </div>
                         <p id="kpi-total" class="text-3xl font-bold text-slate-800">0</p>
@@ -136,22 +136,19 @@
                 </div>
 
                 <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-lg font-bold text-slate-800">Liste des Interventions</h2>
+                    <h2 class="text-lg font-bold text-slate-800">Liste des Interventions (Toutes)</h2>
                 </div>
-                <div id="tasks-container" class="space-y-3">
-                    <p class="text-center text-slate-500 py-4"><i class="fa-solid fa-spinner fa-spin mr-2"></i> Connexion à la base de données...</p>
-                </div>
+                <div id="tasks-container" class="space-y-3"></div>
             </div>
 
-            <!-- VUE 2 : CALENDRIER PLANNING (Nouveau) -->
+            <!-- VUE 2 : CALENDRIER PLANNING (Préventif Uniquement) -->
             <div id="view-planning" class="app-view hidden">
                 <header class="mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-end space-y-4 sm:space-y-0">
                     <div>
-                        <h2 class="text-2xl font-bold text-slate-800">Planning & Contrats</h2>
-                        <p class="text-slate-500 text-sm mt-1">Cliquez sur un bloc pour modifier son statut ou déclencher la récurrence.</p>
+                        <h2 class="text-2xl font-bold text-slate-800">Planning & Contrats Préventifs</h2>
+                        <p class="text-slate-500 text-sm mt-1">Gérez ici vos contrats (Trimestriel, Semestriel...).</p>
                     </div>
                     
-                    <!-- Filtre Client pour le Calendrier -->
                     <div class="w-full sm:w-64">
                         <label class="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Filtrer par Client</label>
                         <select id="calendarClientFilter" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white shadow-sm">
@@ -163,22 +160,21 @@
                     </div>
                 </header>
                 
-                <!-- Conteneur du Calendrier FullCalendar -->
                 <div class="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-100">
                     <div id="calendar" class="h-[600px] w-full"></div>
                 </div>
             </div>
 
-            <!-- VUE 3 : CURATIF -->
+            <!-- VUE 3 : CURATIF (Curatif Uniquement) -->
             <div id="view-curatif" class="app-view hidden">
                 <header class="mb-6">
                     <h2 class="text-2xl font-bold text-slate-800">Interventions Curatives</h2>
-                    <p class="text-slate-500 text-sm mt-1">Dépannages et réparations correctives.</p>
+                    <p class="text-slate-500 text-sm mt-1">Dépannages et urgences machines (hors contrats).</p>
                 </header>
                 <div id="curatif-container" class="space-y-3"></div>
             </div>
 
-            <!-- VUE 4 : DOCS (inchangée) -->
+            <!-- VUE 4 : DOCS -->
             <div id="view-docs" class="app-view hidden">
                 <header class="mb-6">
                     <h2 class="text-2xl font-bold text-slate-800">Base Documentaire Technique</h2>
@@ -186,7 +182,8 @@
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div class="doc-folder bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer" data-folder="hypertherm"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm">Hypertherm</h3></div>
                     <div class="doc-folder bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer" data-folder="messer"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm">Messer</h3></div>
-                    <!-- On laisse juste deux dossiers pour l'exemple html, rajoute les autres au besoin -->
+                    <div class="doc-folder bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer" data-folder="ermaksan"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm">Ermaksan</h3></div>
+                    <div class="doc-folder bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer" data-folder="cybelec"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm">Cybelec</h3></div>
                 </div>
             </div>
 
@@ -206,19 +203,20 @@
                 </div>
             </div>
 
+            <!-- Bouton d'ajout flottant intelligent -->
             <button id="addInterventionBtn" class="fixed bottom-20 md:bottom-8 right-4 md:right-8 w-14 h-14 bg-brand-500 hover:bg-brand-600 text-white rounded-full shadow-lg flex items-center justify-center text-2xl transition-transform hover:scale-105 z-40">
                 <i class="fa-solid fa-plus"></i>
             </button>
         </main>
     </div>
 
-    <!-- Modal Ajout avec Fréquence de Contrat -->
+    <!-- Modal Ajout Intelligent -->
     <div id="addInterventionModal" class="fixed inset-0 bg-slate-900 bg-opacity-60 hidden items-center justify-center z-50 px-4 backdrop-blur-sm transition-opacity">
         <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full transform transition-all overflow-hidden flex flex-col max-h-[90vh]">
             <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                 <div class="flex items-center space-x-3">
                     <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600"><i class="fa-solid fa-plus"></i></div>
-                    <h3 class="text-lg font-bold text-slate-800">Nouvelle Intervention</h3>
+                    <h3 id="modalAddTitle" class="text-lg font-bold text-slate-800">Nouvelle Intervention</h3>
                 </div>
                 <button id="closeModalBtn" class="text-slate-400 hover:text-slate-700 w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200">
                     <i class="fa-solid fa-xmark text-lg"></i>
@@ -227,6 +225,7 @@
             <div class="p-6 overflow-y-auto no-scrollbar">
                 <form id="addInterventionForm" class="space-y-4">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- Sélecteur Client -->
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1">Client</label>
                             <select id="formClient" required class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white">
@@ -236,14 +235,11 @@
                                 <option value="Barea">Barea</option>
                             </select>
                         </div>
+                        <!-- Sélecteur Machine (Dynamique selon client) -->
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1">Machine</label>
                             <select id="formMachine" required class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white">
-                                <option value="" disabled selected>Sélectionner...</option>
-                                <option value="Hypertherm Plasma XPR300">Hypertherm Plasma XPR300</option>
-                                <option value="Commande Cybelec">Commande Cybelec</option>
-                                <option value="MESSER CNIM">MESSER CNIM</option>
-                                <option value="ERMAKSAN Presse Plieuse">ERMAKSAN Presse Plieuse</option>
+                                <option value="" disabled selected>Choisir un client d'abord</option>
                             </select>
                         </div>
                     </div>
@@ -251,9 +247,8 @@
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1">Type</label>
                             <select id="formType" required class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white">
-                                <option value="" disabled selected>Sélectionner...</option>
-                                <option value="Préventif">Préventif</option>
-                                <option value="Curatif">Curatif</option>
+                                <option value="Préventif">Préventif (Contrat/Planning)</option>
+                                <option value="Curatif">Curatif (Dépannage/Urgence)</option>
                             </select>
                         </div>
                         <div>
@@ -267,13 +262,14 @@
                     </div>
                     
                     <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 mt-2">
-                        <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Planification & Contrat</h4>
+                        <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Détails d'exécution</h4>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 mb-1">Date Prévue</label>
                                 <input type="date" id="formDate" required class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 text-slate-700">
                             </div>
-                            <div>
+                            <!-- Conteneur Fréquence caché pour le Curatif -->
+                            <div id="frequenceContainer">
                                 <label class="block text-sm font-medium text-slate-700 mb-1">Récurrence du Contrat</label>
                                 <select id="formFrequence" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white">
                                     <option value="Ponctuel">Aucune (Ponctuel)</option>
@@ -284,7 +280,6 @@
                                 </select>
                             </div>
                         </div>
-                        <p class="text-xs text-slate-500 mt-2"><i class="fa-solid fa-circle-info mr-1"></i> Si une récurrence est sélectionnée, la prochaine intervention sera créée automatiquement lors de la complétion de celle-ci.</p>
                     </div>
                 </form>
             </div>
@@ -297,7 +292,7 @@
         </div>
     </div>
 
-    <!-- Modal d'Action sur Événement du Calendrier -->
+    <!-- Modal d'Action sur Événement (Calendrier) -->
     <div id="eventActionModal" class="fixed inset-0 bg-slate-900 bg-opacity-60 hidden items-center justify-center z-50 px-4 backdrop-blur-sm transition-opacity">
         <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center transform transition-all">
             <h3 id="actionModalTitle" class="text-lg font-bold text-slate-800 mb-1">Détails</h3>
@@ -310,9 +305,8 @@
                 <button id="btnSetEnCours" class="w-full py-3 bg-orange-100 text-orange-700 hover:bg-orange-200 font-bold rounded-xl transition-colors flex items-center justify-center">
                     <i class="fa-solid fa-spinner mr-2"></i> Passer "En Cours"
                 </button>
-                <!-- Bouton Magique pour clôturer et générer la suite -->
                 <button id="btnSetTermine" class="w-full py-3 bg-green-500 text-white hover:bg-green-600 font-bold rounded-xl shadow-sm transition-colors flex items-center justify-center relative overflow-hidden group">
-                    <span class="relative z-10"><i class="fa-solid fa-check-double mr-2"></i> Terminer l'intervention</span>
+                    <span class="relative z-10"><i class="fa-solid fa-check-double mr-2"></i> Terminer le contrat</span>
                     <div class="absolute inset-0 bg-green-400 opacity-0 group-hover:opacity-20 transition-opacity"></div>
                 </button>
                 <button id="btnDeleteEvent" class="w-full py-3 bg-red-50 text-red-600 hover:bg-red-100 font-medium rounded-xl transition-colors">
@@ -345,6 +339,6 @@
         <a href="#" data-view="fiches" class="nav-link flex flex-col items-center text-slate-400 w-1/5"><i class="fa-solid fa-clipboard-list text-lg mb-1"></i><span class="text-[9px] font-medium">Fiches</span></a>
     </nav>
 
-    <script type="module" src="app.js?v=13"></script>
+    <script type="module" src="app.js?v=14"></script>
 </body>
 </html>
