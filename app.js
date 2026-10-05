@@ -14,7 +14,36 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// --- GESTION DE L'INTERFACE (MODAL) ---
+// --- NAVIGATION ENTRE LES VUES (MENU LATÉRAL ET MOBILE) ---
+const navLinks = document.querySelectorAll('.nav-link');
+const appViews = document.querySelectorAll('.app-view');
+
+navLinks.forEach(link => {
+    link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const targetView = link.getAttribute('data-view');
+
+        // Masquer toutes les vues
+        appViews.forEach(view => view.classList.add('hidden'));
+
+        // Afficher la vue ciblée
+        document.getElementById(`view-${targetView}`).classList.remove('hidden');
+
+        // Mettre à jour les styles du menu latéral et mobile
+        navLinks.forEach(l => {
+            l.classList.remove('bg-brand-800', 'text-white');
+            l.classList.add('text-slate-400');
+        });
+        
+        // Activer les liens correspondants
+        document.querySelectorAll(`[data-view="${targetView}"]`).forEach(activeL => {
+            activeL.classList.add('bg-brand-800', 'text-white');
+            activeL.classList.remove('text-slate-400');
+        });
+    });
+});
+
+// --- GESTION DU MODAL D'AJOUT ---
 const modal = document.getElementById('addInterventionModal');
 const addBtn = document.getElementById('addInterventionBtn');
 const closeBtn = document.getElementById('closeModalBtn');
@@ -67,11 +96,14 @@ document.getElementById('addInterventionForm').addEventListener('submit', async 
     }
 });
 
-// --- SYNCHRONISATION EN TEMPS RÉEL (LISTE ET KPIS) ---
+// --- SYNCHRONISATION EN TEMPS RÉEL ---
 const q = query(collection(db, "interventions"), orderBy("date", "asc"));
 onSnapshot(q, (snapshot) => {
     const container = document.getElementById('tasks-container');
+    const planningContainer = document.getElementById('planning-container');
+    
     container.innerHTML = '';
+    planningContainer.innerHTML = '';
     
     let totalCount = snapshot.size;
     let planifieCount = 0;
@@ -80,6 +112,7 @@ onSnapshot(q, (snapshot) => {
 
     if(snapshot.empty) {
         container.innerHTML = '<p class="text-center text-slate-500 py-4">Aucune intervention planifiée.</p>';
+        planningContainer.innerHTML = '<p class="text-center text-slate-500 py-4">Aucune intervention dans le planning.</p>';
         updateKPIs(0, 0, 0);
         return;
     }
@@ -100,7 +133,7 @@ onSnapshot(q, (snapshot) => {
         const config = statusConfig[data.statut] || statusConfig["Planifié"];
         const initialTech = data.technicien ? data.technicien.charAt(0).toUpperCase() : '?';
         
-        container.innerHTML += `
+        const cardHTML = `
             <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex cursor-pointer hover:shadow-md transition-shadow active:scale-[0.98]">
                 <div class="w-2 ${config.bg} ${config.border} border-l-4"></div>
                 <div class="p-4 flex-1 flex flex-col sm:flex-row sm:items-center justify-between">
@@ -121,19 +154,18 @@ onSnapshot(q, (snapshot) => {
                         <div class="px-2.5 py-1 rounded-md flex items-center space-x-1 ${config.bg} ${config.text} border ${config.border} border-opacity-20 text-[10px] font-bold uppercase tracking-wider">
                             <i class="fa-solid ${config.icon}"></i> <span>${data.statut}</span>
                         </div>
-                        <button class="hidden sm:flex w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:bg-brand-50 hover:text-brand-600 items-center justify-center transition-colors" title="Créer la fiche">
-                            <i class="fa-solid fa-file-signature"></i>
-                        </button>
                     </div>
                 </div>
             </div>
         `;
+
+        container.innerHTML += cardHTML;
+        planningContainer.innerHTML += cardHTML;
     });
 
     updateKPIs(totalCount, retardCount, enCoursCount);
 });
 
-// Fonction pour actualiser dynamiquement les compteurs du haut
 function updateKPIs(total, retard, enCours) {
     document.getElementById('kpi-total').textContent = total;
     document.getElementById('kpi-retard').textContent = retard;
@@ -145,10 +177,7 @@ function updateKPIs(total, retard, enCours) {
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
-            .then(reg => {
-                console.log('Service Worker enregistré', reg);
-                reg.update();
-            })
+            .then(reg => reg.update())
             .catch(err => console.error('Erreur Service Worker', err));
     });
 }
