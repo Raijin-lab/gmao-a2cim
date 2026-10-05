@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gmao-a2cim-v3'; // On change la version ici pour purger
+const CACHE_NAME = 'gmao-a2cim-v4'; // On change la version ici pour purger
 
 self.addEventListener('install', (e) => {
     self.skipWaiting();
