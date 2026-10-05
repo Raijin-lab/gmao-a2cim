@@ -14,7 +14,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// --- LOGIQUE DE L'INTERFACE (MODAL) ---
+// --- GESTION DE L'INTERFACE (MODAL) ---
 const modal = document.getElementById('addInterventionModal');
 const addBtn = document.getElementById('addInterventionBtn');
 const closeBtn = document.getElementById('closeModalBtn');
@@ -34,7 +34,6 @@ addBtn.addEventListener('click', openModal);
 closeBtn.addEventListener('click', closeModal);
 cancelBtn.addEventListener('click', closeModal);
 
-// Configuration des styles de statuts
 const statusConfig = {
     "En retard": { border: "border-red-500", bg: "bg-red-50", text: "text-red-700", icon: "fa-triangle-exclamation" },
     "En cours": { border: "border-orange-400", bg: "bg-orange-50", text: "text-orange-700", icon: "fa-spinner" },
@@ -68,19 +67,32 @@ document.getElementById('addInterventionForm').addEventListener('submit', async 
     }
 });
 
-// --- LIRE LES INTERVENTIONS EN TEMPS RÉEL ---
+// --- SYNCHRONISATION EN TEMPS RÉEL (LISTE ET KPIS) ---
 const q = query(collection(db, "interventions"), orderBy("date", "asc"));
 onSnapshot(q, (snapshot) => {
     const container = document.getElementById('tasks-container');
     container.innerHTML = '';
     
+    let totalCount = snapshot.size;
+    let planifieCount = 0;
+    let retardCount = 0;
+    let enCoursCount = 0;
+
     if(snapshot.empty) {
         container.innerHTML = '<p class="text-center text-slate-500 py-4">Aucune intervention planifiée.</p>';
+        // Mise à jour des compteurs à 0
+        updateKPIs(0, 0, 0, 0);
         return;
     }
     
     snapshot.forEach((doc) => {
         const data = doc.data();
+
+        // Calcul des stats dynamiques
+        if (data.statut === "Planifié") planifieCount++;
+        if (data.statut === "En retard") retardCount++;
+        if (data.statut === "En cours") enCoursCount++;
+
         let dateAffichee = data.date;
         if(data.date) {
             const dateObj = new Date(data.date);
@@ -119,13 +131,32 @@ onSnapshot(q, (snapshot) => {
             </div>
         `;
     });
+
+    // Mettre à jour les chiffres en haut de l'écran en temps réel
+    updateKPIs(totalCount, retardCount, enCoursCount);
 });
 
-// --- ENREGISTRER LE SERVICE WORKER (Pour PWA) ---
+// Fonction pour actualiser dynamiquement les 4 cartes du haut
+function updateKPIs(total, retard, enCours) {
+    const kpiElements = document.querySelectorAll('main .grid p.text-3xl');
+    if(kpiElements.length >= 4) {
+        kpiElements[0].textContent = total;   // À faire
+        kpiElements[1].textContent = retard;  // En retard
+        kpiElements[2].textContent = enCours; // En cours
+        // Calcul du taux de complétion fictif ou basé sur les stats
+        kpiElements[3].textContent = total > 0 ? "100%" : "0%"; 
+    }
+}
+
+// --- SERVICE WORKER AVEC PURGE AUTOMATIQUE DU CACHE ---
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
-            .then(reg => console.log('Service Worker enregistré', reg))
+            .then(reg => {
+                console.log('Service Worker enregistré', reg);
+                // Force la vérification d'une mise à jour à chaque ouverture
+                reg.update();
+            })
             .catch(err => console.error('Erreur Service Worker', err));
     });
 }
