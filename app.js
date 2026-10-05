@@ -1,0 +1,131 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+// --- CONFIGURATION FIREBASE ---
+const firebaseConfig = {
+    apiKey: "AIzaSyAvKqfjnjJ4a64QpK2Idt2ms32E0zALFJ4",
+    authDomain: "gmao-a2cim.firebaseapp.com",
+    projectId: "gmao-a2cim",
+    storageBucket: "gmao-a2cim.firebasestorage.app",
+    messagingSenderId: "687654110395",
+    appId: "1:687654110395:web:5ce86666b10c3ad028d59e"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// --- LOGIQUE DE L'INTERFACE (MODAL) ---
+const modal = document.getElementById('addInterventionModal');
+const addBtn = document.getElementById('addInterventionBtn');
+const closeBtn = document.getElementById('closeModalBtn');
+const cancelBtn = document.getElementById('cancelModalBtn');
+
+function openModal() {
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+
+function closeModal() {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+}
+
+addBtn.addEventListener('click', openModal);
+closeBtn.addEventListener('click', closeModal);
+cancelBtn.addEventListener('click', closeModal);
+
+// Configuration des styles de statuts
+const statusConfig = {
+    "En retard": { border: "border-red-500", bg: "bg-red-50", text: "text-red-700", icon: "fa-triangle-exclamation" },
+    "En cours": { border: "border-orange-400", bg: "bg-orange-50", text: "text-orange-700", icon: "fa-spinner" },
+    "Planifié": { border: "border-blue-400", bg: "bg-blue-50", text: "text-blue-700", icon: "fa-clock" }
+};
+
+// --- AJOUTER UNE INTERVENTION ---
+document.getElementById('addInterventionForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btnSubmit = document.getElementById('btnSubmit');
+    btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Enregistrement...';
+    
+    try {
+        await addDoc(collection(db, "interventions"), {
+            client: document.getElementById('formClient').value,
+            machine: document.getElementById('formMachine').value,
+            date: document.getElementById('formDate').value,
+            type: document.getElementById('formType').value,
+            technicien: document.getElementById('formTech').value,
+            statut: "Planifié",
+            timestamp: serverTimestamp()
+        });
+        
+        document.getElementById('addInterventionForm').reset();
+        closeModal();
+        btnSubmit.innerHTML = '<i class="fa-solid fa-save mr-2"></i> Enregistrer';
+    } catch (error) {
+        console.error("Erreur Firebase:", error);
+        alert("Erreur d'enregistrement.");
+        btnSubmit.innerHTML = '<i class="fa-solid fa-save mr-2"></i> Enregistrer';
+    }
+});
+
+// --- LIRE LES INTERVENTIONS EN TEMPS RÉEL ---
+const q = query(collection(db, "interventions"), orderBy("date", "asc"));
+onSnapshot(q, (snapshot) => {
+    const container = document.getElementById('tasks-container');
+    container.innerHTML = '';
+    
+    if(snapshot.empty) {
+        container.innerHTML = '<p class="text-center text-slate-500 py-4">Aucune intervention planifiée.</p>';
+        return;
+    }
+    
+    snapshot.forEach((doc) => {
+        const data = doc.data();
+        let dateAffichee = data.date;
+        if(data.date) {
+            const dateObj = new Date(data.date);
+            dateAffichee = dateObj.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
+        }
+
+        const config = statusConfig[data.statut] || statusConfig["Planifié"];
+        const initialTech = data.technicien ? data.technicien.charAt(0).toUpperCase() : '?';
+        
+        container.innerHTML += `
+            <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex cursor-pointer hover:shadow-md transition-shadow active:scale-[0.98]">
+                <div class="w-2 ${config.bg} ${config.border} border-l-4"></div>
+                <div class="p-4 flex-1 flex flex-col sm:flex-row sm:items-center justify-between">
+                    <div class="mb-3 sm:mb-0">
+                        <div class="flex items-center space-x-2 mb-1">
+                            <span class="text-xs font-bold text-slate-500 uppercase">${data.client}</span>
+                            <span class="w-1 h-1 rounded-full bg-slate-300"></span>
+                            <span class="text-xs text-slate-500">${dateAffichee}</span>
+                        </div>
+                        <h3 class="font-bold text-slate-800 text-sm md:text-base">${data.machine}</h3>
+                        <p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-wrench mr-1"></i> ${data.type}</p>
+                    </div>
+                    <div class="flex items-center justify-between sm:justify-end sm:space-x-4">
+                        <div class="flex items-center space-x-2">
+                            <div class="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600">${initialTech}</div>
+                            <span class="text-xs font-medium text-slate-600 hidden md:inline-block">${data.technicien}</span>
+                        </div>
+                        <div class="px-2.5 py-1 rounded-md flex items-center space-x-1 ${config.bg} ${config.text} border ${config.border} border-opacity-20 text-[10px] font-bold uppercase tracking-wider">
+                            <i class="fa-solid ${config.icon}"></i> <span>${data.statut}</span>
+                        </div>
+                        <button class="hidden sm:flex w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:bg-brand-50 hover:text-brand-600 items-center justify-center transition-colors" title="Créer la fiche">
+                            <i class="fa-solid fa-file-signature"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+});
+
+// --- ENREGISTRER LE SERVICE WORKER (Pour PWA) ---
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+            .then(reg => console.log('Service Worker enregistré', reg))
+            .catch(err => console.error('Erreur Service Worker', err));
+    });
+}
