@@ -14,6 +14,25 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+// --- GESTION DU CODE PIN AU DÉMARRAGE ---
+const CORRECT_PIN = "A2CIM2026"; // Tu pourras modifier ce code secret si tu veux
+
+document.getElementById('pinForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const enteredPin = document.getElementById('pinInput').value;
+    const errorMsg = document.getElementById('pinError');
+
+    if (enteredPin === CORRECT_PIN) {
+        // Masquer l'écran de verrouillage avec une transition fluide
+        const lockScreen = document.getElementById('lockScreen');
+        lockScreen.classList.add('opacity-0', 'transition-opacity', 'duration-300');
+        setTimeout(() => lockScreen.remove(), 300);
+    } else {
+        errorMsg.classList.remove('hidden');
+        document.getElementById('pinInput').value = '';
+    }
+});
+
 // --- NAVIGATION ENTRE LES VUES ---
 const navLinks = document.querySelectorAll('.nav-link');
 const appViews = document.querySelectorAll('.app-view');
@@ -75,13 +94,13 @@ document.getElementById('addInterventionForm').addEventListener('submit', async 
             client: document.getElementById('formClient').value,
             machine: document.getElementById('formMachine').value,
             date: document.getElementById('formDate').value,
-            type: document.getElementById('formType').value, // "Préventif" ou "Curatif"
+            type: document.getElementById('formType').value,
             technicien: document.getElementById('formTech').value,
             statut: "Planifié",
             timestamp: serverTimestamp()
         });
         
-        document.getElementById('addInterventionForm').reset();
+        document.getElementById('addInterventionForm'].reset();
         closeModal();
         btnSubmit.innerHTML = '<i class="fa-solid fa-save mr-2"></i> Enregistrer';
     } catch (error) {
@@ -103,7 +122,7 @@ window.supprimerIntervention = async function(id) {
     }
 };
 
-// --- SYNCHRONISATION ET TRI AUTOMATIQUE (PRÉVENTIF VS CURATIF) ---
+// --- SYNCHRONISATION ET TRI AUTOMATIQUE ---
 const q = query(collection(db, "interventions"), orderBy("date", "asc"));
 onSnapshot(q, (snapshot) => {
     const dashboardContainer = document.getElementById('tasks-container');
@@ -173,10 +192,7 @@ onSnapshot(q, (snapshot) => {
             </div>
         `;
 
-        // 1. Toujours afficher sur le Tableau de bord général
         dashboardContainer.innerHTML += cardHTML;
-
-        // 2. Trier automatiquement selon le type choisi
         if (data.type === "Préventif") {
             planningContainer.innerHTML += cardHTML;
         } else if (data.type === "Curatif") {
@@ -184,7 +200,6 @@ onSnapshot(q, (snapshot) => {
         }
     });
 
-    // Si les sections triées sont vides, afficher un message propre
     if (planningContainer.innerHTML === '') planningContainer.innerHTML = '<p class="text-center text-slate-500 py-4">Aucune intervention préventive.</p>';
     if (curatifContainer.innerHTML === '') curatifContainer.innerHTML = '<p class="text-center text-slate-500 py-4">Aucune intervention curative.</p>';
 
