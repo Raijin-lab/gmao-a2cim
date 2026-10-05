@@ -14,6 +14,75 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+// --- BASE DE DOCUMENTATION (Liste des fichiers par fournisseur) ---
+// Tu pourras ajouter les futurs noms de fichiers ici directement
+const providerDocs = {
+    "hypertherm": [
+        { name: "Manuel XPR170 (Anglais)", file: "XPR170_MANUAL_EN.pdf" },
+        { name: "Schéma Électrique", file: "schema-electrique.pdf" }
+    ],
+    "beckhoff": [],
+    "cybelec": [],
+    "messer": [],
+    "soprolec": [],
+    "fiessler": [],
+    "gullco": [],
+    "sturmer": [],
+    "euroboor": [],
+    "behringer": [],
+    "picot": [],
+    "dimeco": [],
+    "cesurbend": [],
+    "baisheng": [],
+    "ermaksan": [],
+    "vernet": []
+};
+
+// --- GESTION DE LA MODALE DES DOCUMENTS ---
+const docsModal = document.getElementById('docsModal');
+const closeDocsModal = document.getElementById('closeDocsModal');
+const docsListContainer = document.getElementById('docsListContainer');
+const docsModalTitle = document.getElementById('docsModalTitle');
+
+if (closeDocsModal) {
+    closeDocsModal.addEventListener('click', () => {
+        docsModal.classList.add('hidden');
+        docsModal.classList.remove('flex');
+    });
+}
+
+// --- OUVERTURE DES DOSSIERS ---
+const docFolders = document.querySelectorAll('.doc-folder');
+docFolders.forEach(folder => {
+    folder.addEventListener('click', () => {
+        const folderName = folder.getAttribute('data-folder');
+        const folderTitle = folder.querySelector('h3').textContent;
+        const files = providerDocs[folderName] || [];
+
+        if (files.length === 0) {
+            alert(`Aucun document PDF n'est encore configuré pour ${folderTitle}.`);
+            return;
+        }
+
+        if (docsModalTitle) docsModalTitle.textContent = `Documents - ${folderTitle}`;
+        if (docsListContainer) docsListContainer.innerHTML = '';
+
+        files.forEach(docObj => {
+            docsListContainer.innerHTML += `
+                <a href="docs/${folderName}/${docObj.file}" target="_blank" class="flex items-center justify-between p-3 mb-2 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-xl transition-colors text-slate-700 hover:text-brand-800">
+                    <span class="text-sm font-medium"><i class="fa-solid fa-file-pdf text-red-500 mr-2"></i> ${docObj.name}</span>
+                    <i class="fa-solid fa-external-link-alt text-xs text-slate-400"></i>
+                </a>
+            `;
+        });
+
+        if (docsModal) {
+            docsModal.classList.remove('hidden');
+            docsModal.classList.add('flex');
+        }
+    });
+});
+
 // --- GESTION DU CODE PIN AU DÉMARRAGE ---
 const CORRECT_PIN = "A2CIM2026";
 
@@ -36,23 +105,6 @@ if (pinForm) {
         }
     });
 }
-
-// --- OUVERTURE DES DOSSIERS DE LA BASE DOCUMENTAIRE ---
-const docFolders = document.querySelectorAll('.doc-folder');
-docFolders.forEach(folder => {
-    folder.addEventListener('click', () => {
-        const folderName = folder.getAttribute('data-folder');
-        const fileName = folder.getAttribute('data-file');
-
-        if (folderName && fileName) {
-            // Ouvre directement le fichier PDF dans le sous-dossier correspondant sur GitHub
-            const pdfUrl = `docs/${folderName}/${fileName}`;
-            window.open(pdfUrl, '_blank');
-        } else {
-            alert(`Le dossier ${folderName} ne contient pas encore de document PDF configuré.`);
-        }
-    });
-});
 
 // --- NAVIGATION ENTRE LES VUES ---
 const navLinks = document.querySelectorAll('.nav-link');
@@ -247,7 +299,6 @@ function updateKPIs(total, retard, enCours) {
     if (kpiTaux) kpiTaux.textContent = total > 0 ? "100%" : "0%";
 }
 
-// --- SERVICE WORKER ---
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
