@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1e3a8a">
     <title>GMAO pro A2CIM - Tableau de bord</title>
 
-    <link rel="stylesheet" href="style.css?v=5">
+    <link rel="stylesheet" href="style.css?v=7">
     <link rel="manifest" href="manifest.json">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -40,6 +40,9 @@
             </a>
             <a href="#" data-view="planning" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl transition-colors">
                 <i class="fa-solid fa-calendar-check w-6 text-center"></i><span class="font-medium">Planning Préventif</span>
+            </a>
+            <a href="#" data-view="curatif" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl transition-colors">
+                <i class="fa-solid fa-triangle-exclamation w-6 text-center"></i><span class="font-medium">Interventions Curatives</span>
             </a>
             <a href="#" data-view="docs" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl transition-colors">
                 <i class="fa-solid fa-book-open w-6 text-center"></i><span class="font-medium">Base Documentaire</span>
@@ -122,13 +125,22 @@
             <!-- VUE 2 : PLANNING PRÉVENTIF -->
             <div id="view-planning" class="app-view hidden">
                 <header class="mb-6">
-                    <h2 class="text-2xl font-bold text-slate-800">Planning Préventif Global</h2>
-                    <p class="text-slate-500 text-sm mt-1">Calendrier des interventions planifiées pour le parc machine.</p>
+                    <h2 class="text-2xl font-bold text-slate-800">Planning Préventif</h2>
+                    <p class="text-slate-500 text-sm mt-1">Interventions de maintenance préventive programmées.</p>
                 </header>
                 <div id="planning-container" class="space-y-3"></div>
             </div>
 
-            <!-- VUE 3 : BASE DOCUMENTAIRE (Tous les fournisseurs) -->
+            <!-- VUE 3 : INTERVENTIONS CURATIVES -->
+            <div id="view-curatif" class="app-view hidden">
+                <header class="mb-6">
+                    <h2 class="text-2xl font-bold text-slate-800">Interventions Curatives</h2>
+                    <p class="text-slate-500 text-sm mt-1">Dépannages et réparations correctives sur le parc machine.</p>
+                </header>
+                <div id="curatif-container" class="space-y-3"></div>
+            </div>
+
+            <!-- VUE 4 : BASE DOCUMENTAIRE -->
             <div id="view-docs" class="app-view hidden">
                 <header class="mb-6">
                     <h2 class="text-2xl font-bold text-slate-800">Base Documentaire Technique</h2>
@@ -136,74 +148,26 @@
                 </header>
                 
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer">
-                        <i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i>
-                        <h3 class="font-bold text-slate-800 text-sm">Hypertherm</h3>
-                    </div>
-                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer">
-                        <i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i>
-                        <h3 class="font-bold text-slate-800 text-sm">Beckhoff</h3>
-                    </div>
-                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer">
-                        <i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i>
-                        <h3 class="font-bold text-slate-800 text-sm">Cybelec</h3>
-                    </div>
-                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer">
-                        <i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i>
-                        <h3 class="font-bold text-slate-800 text-sm">Messer</h3>
-                    </div>
-                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer">
-                        <i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i>
-                        <h3 class="font-bold text-slate-800 text-sm">Soprolec</h3>
-                    </div>
-                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer">
-                        <i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i>
-                        <h3 class="font-bold text-slate-800 text-sm">Fiessler</h3>
-                    </div>
-                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer">
-                        <i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i>
-                        <h3 class="font-bold text-slate-800 text-sm">Gullco</h3>
-                    </div>
-                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer">
-                        <i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i>
-                        <h3 class="font-bold text-slate-800 text-sm">Sturmer</h3>
-                    </div>
-                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer">
-                        <i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i>
-                        <h3 class="font-bold text-slate-800 text-sm">Euroboor</h3>
-                    </div>
-                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer">
-                        <i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i>
-                        <h3 class="font-bold text-slate-800 text-sm">Behringer</h3>
-                    </div>
-                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer">
-                        <i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i>
-                        <h3 class="font-bold text-slate-800 text-sm">Picot</h3>
-                    </div>
-                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer">
-                        <i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i>
-                        <h3 class="font-bold text-slate-800 text-sm">Dimeco</h3>
-                    </div>
-                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer">
-                        <i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i>
-                        <h3 class="font-bold text-slate-800 text-sm">Cesurbend</h3>
-                    </div>
-                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer">
-                        <i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i>
-                        <h3 class="font-bold text-slate-800 text-sm">Baisheng Laser</h3>
-                    </div>
-                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer">
-                        <i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i>
-                        <h3 class="font-bold text-slate-800 text-sm">Ermaksan</h3>
-                    </div>
-                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer">
-                        <i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i>
-                        <h3 class="font-bold text-slate-800 text-sm">Vernet Behringer</h3>
-                    </div>
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm">Hypertherm</h3></div>
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm">Beckhoff</h3></div>
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm">Cybelec</h3></div>
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm">Messer</h3></div>
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm">Soprolec</h3></div>
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm">Fiessler</h3></div>
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm">Gullco</h3></div>
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm">Sturmer</h3></div>
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm">Euroboor</h3></div>
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm">Behringer</h3></div>
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm">Picot</h3></div>
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm">Dimeco</h3></div>
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm">Cesurbend</h3></div>
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm">Baisheng Laser</h3></div>
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm">Ermaksan</h3></div>
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm">Vernet Behringer</h3></div>
                 </div>
             </div>
 
-            <!-- VUE 4 : FICHES D'INTERVENTION -->
+            <!-- VUE 5 : FICHES D'INTERVENTION -->
             <div id="view-fiches" class="app-view hidden">
                 <header class="mb-6">
                     <h2 class="text-2xl font-bold text-slate-800">Fiches d'Intervention</h2>
@@ -313,12 +277,13 @@
 
     <!-- Navigation Mobile -->
     <nav class="md:hidden fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 flex justify-around py-3 pb-safe z-30 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-        <a href="#" data-view="dashboard" class="nav-link flex flex-col items-center text-brand-800 w-1/4"><i class="fa-solid fa-chart-pie text-xl mb-1"></i><span class="text-[10px] font-medium">Bord</span></a>
-        <a href="#" data-view="planning" class="nav-link flex flex-col items-center text-slate-400 hover:text-brand-800 transition-colors w-1/4"><i class="fa-solid fa-calendar-check text-xl mb-1"></i><span class="text-[10px] font-medium">Planning</span></a>
-        <a href="#" data-view="docs" class="nav-link flex flex-col items-center text-slate-400 hover:text-brand-800 transition-colors w-1/4"><i class="fa-solid fa-book-open text-xl mb-1"></i><span class="text-[10px] font-medium">Docs</span></a>
-        <a href="#" data-view="fiches" class="nav-link flex flex-col items-center text-slate-400 hover:text-brand-800 transition-colors w-1/4"><i class="fa-solid fa-clipboard-list text-xl mb-1"></i><span class="text-[10px] font-medium">Fiches</span></a>
+        <a href="#" data-view="dashboard" class="nav-link flex flex-col items-center text-brand-850 w-1/5"><i class="fa-solid fa-chart-pie text-lg mb-1"></i><span class="text-[9px] font-medium">Bord</span></a>
+        <a href="#" data-view="planning" class="nav-link flex flex-col items-center text-slate-400 hover:text-brand-800 transition-colors w-1/5"><i class="fa-solid fa-calendar-check text-lg mb-1"></i><span class="text-[9px] font-medium">Prév.</span></a>
+        <a href="#" data-view="curatif" class="nav-link flex flex-col items-center text-slate-400 hover:text-brand-800 transition-colors w-1/5"><i class="fa-solid fa-triangle-exclamation text-lg mb-1"></i><span class="text-[9px] font-medium">Curat.</span></a>
+        <a href="#" data-view="docs" class="nav-link flex flex-col items-center text-slate-400 hover:text-brand-800 transition-colors w-1/5"><i class="fa-solid fa-book-open text-lg mb-1"></i><span class="text-[9px] font-medium">Docs</span></a>
+        <a href="#" data-view="fiches" class="nav-link flex flex-col items-center text-slate-400 hover:text-brand-800 transition-colors w-1/5"><i class="fa-solid fa-clipboard-list text-lg mb-1"></i><span class="text-[9px] font-medium">Fiches</span></a>
     </nav>
 
-    <script type="module" src="app.js?v=6"></script>
+    <script type="module" src="app.js?v=7"></script>
 </body>
 </html>
