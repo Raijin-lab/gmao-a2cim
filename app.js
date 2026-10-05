@@ -15,23 +15,27 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 // --- GESTION DU CODE PIN AU DÉMARRAGE ---
-const CORRECT_PIN = "A2CIM2026"; // Tu pourras modifier ce code secret si tu veux
+const CORRECT_PIN = "A2CIM2026";
 
-document.getElementById('pinForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const enteredPin = document.getElementById('pinInput').value;
-    const errorMsg = document.getElementById('pinError');
+const pinForm = document.getElementById('pinForm');
+if (pinForm) {
+    pinForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const enteredPin = document.getElementById('pinInput').value.trim();
+        const errorMsg = document.getElementById('pinError');
 
-    if (enteredPin === CORRECT_PIN) {
-        // Masquer l'écran de verrouillage avec une transition fluide
-        const lockScreen = document.getElementById('lockScreen');
-        lockScreen.classList.add('opacity-0', 'transition-opacity', 'duration-300');
-        setTimeout(() => lockScreen.remove(), 300);
-    } else {
-        errorMsg.classList.remove('hidden');
-        document.getElementById('pinInput').value = '';
-    }
-});
+        if (enteredPin === CORRECT_PIN) {
+            const lockScreen = document.getElementById('lockScreen');
+            if (lockScreen) {
+                lockScreen.classList.add('opacity-0', 'transition-opacity', 'duration-300');
+                setTimeout(() => lockScreen.remove(), 300);
+            }
+        } else {
+            if (errorMsg) errorMsg.classList.remove('hidden');
+            document.getElementById('pinInput').value = '';
+        }
+    });
+}
 
 // --- NAVIGATION ENTRE LES VUES ---
 const navLinks = document.querySelectorAll('.nav-link');
@@ -43,7 +47,8 @@ navLinks.forEach(link => {
         const targetView = link.getAttribute('data-view');
 
         appViews.forEach(view => view.classList.add('hidden'));
-        document.getElementById(`view-${targetView}`).classList.remove('hidden');
+        const targetElement = document.getElementById(`view-${targetView}`);
+        if (targetElement) targetElement.classList.remove('hidden');
 
         navLinks.forEach(l => {
             l.classList.remove('bg-brand-800', 'text-white');
@@ -64,18 +69,22 @@ const closeBtn = document.getElementById('closeModalBtn');
 const cancelBtn = document.getElementById('cancelModalBtn');
 
 function openModal() {
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
 }
 
 function closeModal() {
-    modal.classList.add('hidden');
-    modal.classList.remove('flex');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
 }
 
-addBtn.addEventListener('click', openModal);
-closeBtn.addEventListener('click', closeModal);
-cancelBtn.addEventListener('click', closeModal);
+if (addBtn) addBtn.addEventListener('click', openModal);
+if (closeBtn) closeBtn.addEventListener('click', closeModal);
+if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
 
 const statusConfig = {
     "En retard": { border: "border-red-500", bg: "bg-red-50", text: "text-red-700", icon: "fa-triangle-exclamation" },
@@ -84,31 +93,34 @@ const statusConfig = {
 };
 
 // --- AJOUTER UNE INTERVENTION ---
-document.getElementById('addInterventionForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const btnSubmit = document.getElementById('btnSubmit');
-    btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Enregistrement...';
-    
-    try {
-        await addDoc(collection(db, "interventions"), {
-            client: document.getElementById('formClient').value,
-            machine: document.getElementById('formMachine').value,
-            date: document.getElementById('formDate').value,
-            type: document.getElementById('formType').value,
-            technicien: document.getElementById('formTech').value,
-            statut: "Planifié",
-            timestamp: serverTimestamp()
-        });
+const addForm = document.getElementById('addInterventionForm');
+if (addForm) {
+    addForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btnSubmit = document.getElementById('btnSubmit');
+        if (btnSubmit) btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Enregistrement...';
         
-        document.getElementById('addInterventionForm'].reset();
-        closeModal();
-        btnSubmit.innerHTML = '<i class="fa-solid fa-save mr-2"></i> Enregistrer';
-    } catch (error) {
-        console.error("Erreur Firebase:", error);
-        alert("Erreur d'enregistrement.");
-        btnSubmit.innerHTML = '<i class="fa-solid fa-save mr-2"></i> Enregistrer';
-    }
-});
+        try {
+            await addDoc(collection(db, "interventions"), {
+                client: document.getElementById('formClient').value,
+                machine: document.getElementById('formMachine').value,
+                date: document.getElementById('formDate').value,
+                type: document.getElementById('formType').value,
+                technicien: document.getElementById('formTech').value,
+                statut: "Planifié",
+                timestamp: serverTimestamp()
+            });
+            
+            addForm.reset();
+            closeModal();
+            if (btnSubmit) btnSubmit.innerHTML = '<i class="fa-solid fa-save mr-2"></i> Enregistrer';
+        } catch (error) {
+            console.error("Erreur Firebase:", error);
+            alert("Erreur d'enregistrement.");
+            if (btnSubmit) btnSubmit.innerHTML = '<i class="fa-solid fa-save mr-2"></i> Enregistrer';
+        }
+    });
+}
 
 // --- SUPPRIMER UNE INTERVENTION ---
 window.supprimerIntervention = async function(id) {
@@ -129,18 +141,18 @@ onSnapshot(q, (snapshot) => {
     const planningContainer = document.getElementById('planning-container');
     const curatifContainer = document.getElementById('curatif-container');
     
-    dashboardContainer.innerHTML = '';
-    planningContainer.innerHTML = '';
-    curatifContainer.innerHTML = '';
+    if (dashboardContainer) dashboardContainer.innerHTML = '';
+    if (planningContainer) planningContainer.innerHTML = '';
+    if (curatifContainer) curatifContainer.innerHTML = '';
     
     let totalCount = snapshot.size;
     let retardCount = 0;
     let enCoursCount = 0;
 
     if(snapshot.empty) {
-        dashboardContainer.innerHTML = '<p class="text-center text-slate-500 py-4">Aucune intervention planifiée.</p>';
-        planningContainer.innerHTML = '<p class="text-center text-slate-500 py-4">Aucun préventif planifié.</p>';
-        curatifContainer.innerHTML = '<p class="text-center text-slate-500 py-4">Aucun curatif planifié.</p>';
+        if (dashboardContainer) dashboardContainer.innerHTML = '<p class="text-center text-slate-500 py-4">Aucune intervention planifiée.</p>';
+        if (planningContainer) planningContainer.innerHTML = '<p class="text-center text-slate-500 py-4">Aucun préventif planifié.</p>';
+        if (curatifContainer) curatifContainer.innerHTML = '<p class="text-center text-slate-500 py-4">Aucun curatif planifié.</p>';
         updateKPIs(0, 0, 0);
         return;
     }
@@ -192,25 +204,30 @@ onSnapshot(q, (snapshot) => {
             </div>
         `;
 
-        dashboardContainer.innerHTML += cardHTML;
-        if (data.type === "Préventif") {
+        if (dashboardContainer) dashboardContainer.innerHTML += cardHTML;
+        if (data.type === "Préventif" && planningContainer) {
             planningContainer.innerHTML += cardHTML;
-        } else if (data.type === "Curatif") {
+        } else if (data.type === "Curatif" && curatifContainer) {
             curatifContainer.innerHTML += cardHTML;
         }
     });
 
-    if (planningContainer.innerHTML === '') planningContainer.innerHTML = '<p class="text-center text-slate-500 py-4">Aucune intervention préventive.</p>';
-    if (curatifContainer.innerHTML === '') curatifContainer.innerHTML = '<p class="text-center text-slate-500 py-4">Aucune intervention curative.</p>';
+    if (planningContainer && planningContainer.innerHTML === '') planningContainer.innerHTML = '<p class="text-center text-slate-500 py-4">Aucune intervention préventive.</p>';
+    if (curatifContainer && curatifContainer.innerHTML === '') curatifContainer.innerHTML = '<p class="text-center text-slate-500 py-4">Aucune intervention curative.</p>';
 
     updateKPIs(totalCount, retardCount, enCoursCount);
 });
 
 function updateKPIs(total, retard, enCours) {
-    document.getElementById('kpi-total').textContent = total;
-    document.getElementById('kpi-retard').textContent = retard;
-    document.getElementById('kpi-encours').textContent = enCours;
-    document.getElementById('kpi-taux').textContent = total > 0 ? "100%" : "0%";
+    const kpiTotal = document.getElementById('kpi-total');
+    const kpiRetard = document.getElementById('kpi-retard');
+    const kpiEncours = document.getElementById('kpi-encours');
+    const kpiTaux = document.getElementById('kpi-taux');
+
+    if (kpiTotal) kpiTotal.textContent = total;
+    if (kpiRetard) kpiRetard.textContent = retard;
+    if (kpiEncours) kpiEncours.textContent = enCours;
+    if (kpiTaux) kpiTaux.textContent = total > 0 ? "100%" : "0%";
 }
 
 // --- SERVICE WORKER ---
