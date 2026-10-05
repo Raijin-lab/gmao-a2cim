@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1e3a8a">
     <title>GMAO pro A2CIM - Tableau de bord</title>
 
-    <link rel="stylesheet" href="style.css?v=7">
+    <link rel="stylesheet" href="style.css?v=8">
     <link rel="manifest" href="manifest.json">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -25,6 +25,27 @@
     </script>
 </head>
 <body class="text-slate-800 antialiased font-sans flex h-screen overflow-hidden">
+
+    <!-- ÉCRAN DE VERROUILLAGE (Protection au démarrage) -->
+    <div id="lockScreen" class="fixed inset-0 bg-brand-900 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-8 text-center">
+            <div class="w-16 h-16 bg-brand-50 text-brand-900 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-inner">
+                <i class="fa-solid fa-lock"></i>
+            </div>
+            <h2 class="text-xl font-bold text-slate-800 mb-1">GMAO pro A2CIM</h2>
+            <p class="text-xs text-slate-500 mb-6">Accès réservé aux techniciens</p>
+            
+            <form id="pinForm" class="space-y-4">
+                <div>
+                    <input type="password" id="pinInput" placeholder="Entrez le code d'accès" required class="w-full text-center tracking-widest text-lg px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50">
+                </div>
+                <button type="submit" class="w-full bg-brand-500 hover:bg-brand-600 text-white font-medium py-3 rounded-xl transition-colors shadow-sm">
+                    Déverrouiller
+                </button>
+                <p id="pinError" class="text-xs text-red-500 hidden">Code incorrect. Réessayez.</p>
+            </form>
+        </div>
+    </div>
     
     <!-- Sidebar Bureau -->
     <aside class="hidden md:flex flex-col w-64 bg-brand-900 text-white shadow-xl h-full z-20">
@@ -284,6 +305,6 @@
         <a href="#" data-view="fiches" class="nav-link flex flex-col items-center text-slate-400 hover:text-brand-800 transition-colors w-1/5"><i class="fa-solid fa-clipboard-list text-lg mb-1"></i><span class="text-[9px] font-medium">Fiches</span></a>
     </nav>
 
-    <script type="module" src="app.js?v=7"></script>
+    <script type="module" src="app.js?v=8"></script>
 </body>
 </html>
