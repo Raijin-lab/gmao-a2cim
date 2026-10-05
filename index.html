@@ -6,15 +6,12 @@
     <meta name="theme-color" content="#1e3a8a">
     <title>GMAO pro A2CIM - Tableau de bord</title>
 
-    <link rel="stylesheet" href="style.css?v=14">
+    <link rel="stylesheet" href="style.css?v=16">
     <link rel="manifest" href="manifest.json">
 
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-
-    <!-- FullCalendar CDN -->
     <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js'></script>
 
     <script>
@@ -44,7 +41,6 @@
             </div>
             <h2 class="text-xl font-bold text-slate-800 mb-1">GMAO pro A2CIM</h2>
             <p class="text-xs text-slate-500 mb-6">Accès réservé aux techniciens</p>
-            
             <form id="pinForm" class="space-y-4">
                 <div>
                     <input type="password" id="pinInput" placeholder="Entrez le code d'accès" required class="w-full text-center tracking-widest text-lg px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50">
@@ -52,7 +48,7 @@
                 <button type="submit" class="w-full bg-brand-500 hover:bg-brand-600 text-white font-medium py-3 rounded-xl transition-colors shadow-sm">
                     Déverrouiller
                 </button>
-                <p id="pinError" class="text-xs text-red-500 hidden">Code incorrect. Réessayez.</p>
+                <p id="pinError" class="text-xs text-red-500 hidden">Code incorrect.</p>
             </form>
         </div>
     </div>
@@ -75,11 +71,14 @@
             <a href="#" data-view="curatif" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl transition-colors">
                 <i class="fa-solid fa-triangle-exclamation w-6 text-center"></i><span class="font-medium">Interventions Curatives</span>
             </a>
+            <a href="#" data-view="parc" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl transition-colors">
+                <i class="fa-solid fa-industry w-6 text-center"></i><span class="font-medium">Gestion du Parc</span>
+            </a>
             <a href="#" data-view="docs" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl transition-colors">
                 <i class="fa-solid fa-book-open w-6 text-center"></i><span class="font-medium">Base Documentaire</span>
             </a>
             <a href="#" data-view="fiches" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl transition-colors">
-                <i class="fa-solid fa-clipboard-list w-6 text-center"></i><span class="font-medium">Fiches d'Intervention</span>
+                <i class="fa-solid fa-clipboard-list w-6 text-center"></i><span class="font-medium">Fiches d'Interv.</span>
             </a>
         </nav>
     </aside>
@@ -91,7 +90,6 @@
                 <i class="fa-solid fa-cogs text-blue-300"></i>
                 <h1 class="text-xl font-bold tracking-wider">GMAO pro <span class="text-blue-300">A2CIM</span></h1>
             </div>
-            <div class="w-8 h-8 rounded-full bg-brand-500 flex items-center justify-center font-bold text-sm">Z</div>
         </header>
 
         <main class="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 no-scrollbar w-full relative">
@@ -104,7 +102,6 @@
                 </header>
 
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                    <!-- KPIs -->
                     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center">
                         <div class="flex items-center justify-between mb-2">
                             <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">À faire</h3>
@@ -128,7 +125,7 @@
                     </div>
                     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center">
                         <div class="flex items-center justify-between mb-2">
-                            <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Taux complétion</h3>
+                            <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Taux</h3>
                             <div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-600"><i class="fa-solid fa-check-double"></i></div>
                         </div>
                         <p id="kpi-taux" class="text-3xl font-bold text-slate-800">0%</p>
@@ -141,21 +138,19 @@
                 <div id="tasks-container" class="space-y-3"></div>
             </div>
 
-            <!-- VUE 2 : CALENDRIER PLANNING (Préventif Uniquement) -->
+            <!-- VUE 2 : CALENDRIER -->
             <div id="view-planning" class="app-view hidden">
                 <header class="mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-end space-y-4 sm:space-y-0">
                     <div>
                         <h2 class="text-2xl font-bold text-slate-800">Planning & Contrats Préventifs</h2>
-                        <p class="text-slate-500 text-sm mt-1">Gérez ici vos contrats (Trimestriel, Semestriel...).</p>
+                        <p class="text-slate-500 text-sm mt-1">Gérez ici vos contrats. Les curatifs n'apparaissent pas ici.</p>
                     </div>
                     
                     <div class="w-full sm:w-64">
                         <label class="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Filtrer par Client</label>
                         <select id="calendarClientFilter" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white shadow-sm">
                             <option value="ALL" selected>Tous les clients</option>
-                            <option value="Maghreb Steel">Maghreb Steel</option>
-                            <option value="LAMALIF">LAMALIF</option>
-                            <option value="Barea">Barea</option>
+                            <!-- Rempli dynamiquement -->
                         </select>
                     </div>
                 </header>
@@ -165,7 +160,7 @@
                 </div>
             </div>
 
-            <!-- VUE 3 : CURATIF (Curatif Uniquement) -->
+            <!-- VUE 3 : CURATIF -->
             <div id="view-curatif" class="app-view hidden">
                 <header class="mb-6">
                     <h2 class="text-2xl font-bold text-slate-800">Interventions Curatives</h2>
@@ -174,10 +169,31 @@
                 <div id="curatif-container" class="space-y-3"></div>
             </div>
 
-            <!-- VUE 4 : DOCS -->
+            <!-- VUE 4 : GESTION DU PARC (Clients & Machines) -->
+            <div id="view-parc" class="app-view hidden">
+                <header class="mb-6">
+                    <h2 class="text-2xl font-bold text-slate-800">Gestion du Parc Clients</h2>
+                    <p class="text-slate-500 text-sm mt-1">Ajoutez vos clients et leurs machines ici. Tout est synchronisé.</p>
+                </header>
+                
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 mb-6">
+                    <form id="formAddClient" class="flex flex-col sm:flex-row gap-3">
+                        <input type="text" id="newClientName" placeholder="Nom du nouveau client (ex: SOMACA)" required class="flex-1 px-4 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 text-slate-700">
+                        <button type="submit" class="bg-brand-800 hover:bg-brand-900 text-white font-medium px-6 py-2 rounded-xl transition-colors flex items-center justify-center">
+                            <i class="fa-solid fa-plus mr-2"></i> Ajouter Client
+                        </button>
+                    </form>
+                </div>
+
+                <div id="parc-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <p class="text-center text-slate-500 col-span-full"><i class="fa-solid fa-spinner fa-spin mr-2"></i> Chargement du parc...</p>
+                </div>
+            </div>
+
+            <!-- VUE 5 : DOCS -->
             <div id="view-docs" class="app-view hidden">
                 <header class="mb-6">
-                    <h2 class="text-2xl font-bold text-slate-800">Base Documentaire Technique</h2>
+                    <h2 class="text-2xl font-bold text-slate-800">Base Documentaire</h2>
                 </header>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div class="doc-folder bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer" data-folder="hypertherm"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm">Hypertherm</h3></div>
@@ -187,58 +203,44 @@
                 </div>
             </div>
 
-            <!-- VUE 5 : FICHES -->
+            <!-- VUE 6 : FICHES -->
             <div id="view-fiches" class="app-view hidden">
                 <header class="mb-6">
                     <h2 class="text-2xl font-bold text-slate-800">Fiches d'Intervention</h2>
                 </header>
                 <div class="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 text-center">
-                    <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
-                        <i class="fa-solid fa-file-signature"></i>
-                    </div>
-                    <h3 class="text-lg font-bold text-slate-800 mb-2">Générateur de fiches</h3>
-                    <a href="#" target="_blank" class="inline-flex items-center px-6 py-3 bg-brand-500 hover:bg-brand-600 text-white font-medium rounded-xl transition-colors shadow-sm">
-                        <i class="fa-solid fa-external-link-alt mr-2"></i> Ouvrir
-                    </a>
+                    <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-full mx-auto mb-4 text-2xl flex items-center justify-center"><i class="fa-solid fa-file-signature"></i></div>
+                    <a href="#" class="inline-flex px-6 py-3 bg-brand-500 text-white rounded-xl"><i class="fa-solid fa-external-link-alt mr-2 mt-1"></i> Ouvrir Générateur</a>
                 </div>
             </div>
 
-            <!-- Bouton d'ajout flottant intelligent -->
-            <button id="addInterventionBtn" class="fixed bottom-20 md:bottom-8 right-4 md:right-8 w-14 h-14 bg-brand-500 hover:bg-brand-600 text-white rounded-full shadow-lg flex items-center justify-center text-2xl transition-transform hover:scale-105 z-40">
+            <button id="addInterventionBtn" class="fixed bottom-20 md:bottom-8 right-4 md:right-8 w-14 h-14 bg-brand-500 hover:bg-brand-600 text-white rounded-full shadow-lg flex items-center justify-center text-2xl z-40">
                 <i class="fa-solid fa-plus"></i>
             </button>
         </main>
     </div>
 
-    <!-- Modal Ajout Intelligent -->
+    <!-- Modal Ajout Intervention -->
     <div id="addInterventionModal" class="fixed inset-0 bg-slate-900 bg-opacity-60 hidden items-center justify-center z-50 px-4 backdrop-blur-sm transition-opacity">
-        <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full transform transition-all overflow-hidden flex flex-col max-h-[90vh]">
-            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                <div class="flex items-center space-x-3">
-                    <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600"><i class="fa-solid fa-plus"></i></div>
-                    <h3 id="modalAddTitle" class="text-lg font-bold text-slate-800">Nouvelle Intervention</h3>
-                </div>
-                <button id="closeModalBtn" class="text-slate-400 hover:text-slate-700 w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200">
-                    <i class="fa-solid fa-xmark text-lg"></i>
-                </button>
+        <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full flex flex-col max-h-[90vh]">
+            <div class="px-6 py-4 border-b flex justify-between items-center bg-slate-50">
+                <h3 id="modalAddTitle" class="text-lg font-bold text-slate-800">Nouvelle Intervention</h3>
+                <button id="closeModalBtn" class="text-slate-400 hover:text-slate-700"><i class="fa-solid fa-xmark text-lg"></i></button>
             </div>
             <div class="p-6 overflow-y-auto no-scrollbar">
                 <form id="addInterventionForm" class="space-y-4">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <!-- Sélecteur Client -->
+                        <!-- Sélecteur Client DYNAMIQUE -->
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1">Client</label>
-                            <select id="formClient" required class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white">
-                                <option value="" disabled selected>Sélectionner...</option>
-                                <option value="Maghreb Steel">Maghreb Steel</option>
-                                <option value="LAMALIF">LAMALIF</option>
-                                <option value="Barea">Barea</option>
+                            <select id="formClient" required class="w-full px-3 py-2.5 border rounded-xl text-sm focus:ring-brand-500 bg-white">
+                                <option value="" disabled selected>Chargement...</option>
                             </select>
                         </div>
-                        <!-- Sélecteur Machine (Dynamique selon client) -->
+                        <!-- Sélecteur Machine DYNAMIQUE -->
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1">Machine</label>
-                            <select id="formMachine" required class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white">
+                            <select id="formMachine" required class="w-full px-3 py-2.5 border rounded-xl text-sm bg-white">
                                 <option value="" disabled selected>Choisir un client d'abord</option>
                             </select>
                         </div>
@@ -246,14 +248,14 @@
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1">Type</label>
-                            <select id="formType" required class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white">
+                            <select id="formType" required class="w-full px-3 py-2.5 border rounded-xl text-sm bg-white">
                                 <option value="Préventif">Préventif (Contrat/Planning)</option>
                                 <option value="Curatif">Curatif (Dépannage/Urgence)</option>
                             </select>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1">Technicien</label>
-                            <select id="formTech" required class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white">
+                            <select id="formTech" required class="w-full px-3 py-2.5 border rounded-xl text-sm bg-white">
                                 <option value="" disabled selected>Assigner à...</option>
                                 <option value="Zouhair">Zouhair</option>
                                 <option value="OUELD LAFNICHA">Oueld Lafnicha</option>
@@ -261,17 +263,15 @@
                         </div>
                     </div>
                     
-                    <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 mt-2">
-                        <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Détails d'exécution</h4>
+                    <div class="bg-slate-50 p-4 rounded-xl border mt-2">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 mb-1">Date Prévue</label>
-                                <input type="date" id="formDate" required class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 text-slate-700">
+                                <input type="date" id="formDate" required class="w-full px-3 py-2.5 border rounded-xl text-sm">
                             </div>
-                            <!-- Conteneur Fréquence caché pour le Curatif -->
                             <div id="frequenceContainer">
                                 <label class="block text-sm font-medium text-slate-700 mb-1">Récurrence du Contrat</label>
-                                <select id="formFrequence" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white">
+                                <select id="formFrequence" class="w-full px-3 py-2.5 border rounded-xl text-sm bg-white">
                                     <option value="Ponctuel">Aucune (Ponctuel)</option>
                                     <option value="Mensuel">Mensuelle (1 mois)</option>
                                     <option value="Trimestriel">Trimestrielle (3 mois)</option>
@@ -283,38 +283,25 @@
                     </div>
                 </form>
             </div>
-            <div class="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end space-x-3">
-                <button type="button" id="cancelModalBtn" class="px-4 py-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl transition-colors">Annuler</button>
-                <button type="submit" form="addInterventionForm" id="btnSubmit" class="px-4 py-2.5 text-sm font-medium text-white bg-brand-500 hover:bg-brand-600 rounded-xl shadow-sm transition-colors flex items-center">
-                    <i class="fa-solid fa-save mr-2"></i> Enregistrer
-                </button>
+            <div class="px-6 py-4 border-t bg-slate-50 flex justify-end space-x-3">
+                <button type="button" id="cancelModalBtn" class="px-4 py-2.5 text-sm bg-white border rounded-xl">Annuler</button>
+                <button type="submit" form="addInterventionForm" id="btnSubmit" class="px-4 py-2.5 text-sm text-white bg-brand-500 rounded-xl">Enregistrer</button>
             </div>
         </div>
     </div>
 
-    <!-- Modal d'Action sur Événement (Calendrier) -->
-    <div id="eventActionModal" class="fixed inset-0 bg-slate-900 bg-opacity-60 hidden items-center justify-center z-50 px-4 backdrop-blur-sm transition-opacity">
-        <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center transform transition-all">
+    <!-- Modal d'Action (Calendrier) -->
+    <div id="eventActionModal" class="fixed inset-0 bg-slate-900 bg-opacity-60 hidden items-center justify-center z-50 px-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center">
             <h3 id="actionModalTitle" class="text-lg font-bold text-slate-800 mb-1">Détails</h3>
             <p id="actionModalSub" class="text-sm text-slate-500 mb-6">Client / Machine</p>
-            
-            <input type="hidden" id="actionEventId">
-            <input type="hidden" id="actionEventFrequence">
+            <input type="hidden" id="actionEventId"><input type="hidden" id="actionEventFrequence">
             
             <div class="space-y-3">
-                <button id="btnSetEnCours" class="w-full py-3 bg-orange-100 text-orange-700 hover:bg-orange-200 font-bold rounded-xl transition-colors flex items-center justify-center">
-                    <i class="fa-solid fa-spinner mr-2"></i> Passer "En Cours"
-                </button>
-                <button id="btnSetTermine" class="w-full py-3 bg-green-500 text-white hover:bg-green-600 font-bold rounded-xl shadow-sm transition-colors flex items-center justify-center relative overflow-hidden group">
-                    <span class="relative z-10"><i class="fa-solid fa-check-double mr-2"></i> Terminer le contrat</span>
-                    <div class="absolute inset-0 bg-green-400 opacity-0 group-hover:opacity-20 transition-opacity"></div>
-                </button>
-                <button id="btnDeleteEvent" class="w-full py-3 bg-red-50 text-red-600 hover:bg-red-100 font-medium rounded-xl transition-colors">
-                    Supprimer
-                </button>
-                <button id="btnCloseActionModal" class="w-full py-2 text-slate-500 hover:text-slate-800 font-medium mt-2">
-                    Fermer
-                </button>
+                <button id="btnSetEnCours" class="w-full py-3 bg-orange-100 text-orange-700 font-bold rounded-xl">Passer "En Cours"</button>
+                <button id="btnSetTermine" class="w-full py-3 bg-green-500 text-white font-bold rounded-xl">Terminer le contrat</button>
+                <button id="btnDeleteEvent" class="w-full py-3 bg-red-50 text-red-600 font-medium rounded-xl">Supprimer</button>
+                <button id="btnCloseActionModal" class="w-full py-2 text-slate-500 font-medium">Fermer</button>
             </div>
         </div>
     </div>
@@ -335,10 +322,10 @@
         <a href="#" data-view="dashboard" class="nav-link flex flex-col items-center text-brand-850 w-1/5"><i class="fa-solid fa-chart-pie text-lg mb-1"></i><span class="text-[9px] font-medium">Bord</span></a>
         <a href="#" data-view="planning" class="nav-link flex flex-col items-center text-slate-400 w-1/5"><i class="fa-solid fa-calendar-check text-lg mb-1"></i><span class="text-[9px] font-medium">Cal.</span></a>
         <a href="#" data-view="curatif" class="nav-link flex flex-col items-center text-slate-400 w-1/5"><i class="fa-solid fa-triangle-exclamation text-lg mb-1"></i><span class="text-[9px] font-medium">Cur.</span></a>
+        <a href="#" data-view="parc" class="nav-link flex flex-col items-center text-slate-400 w-1/5"><i class="fa-solid fa-industry text-lg mb-1"></i><span class="text-[9px] font-medium">Parc</span></a>
         <a href="#" data-view="docs" class="nav-link flex flex-col items-center text-slate-400 w-1/5"><i class="fa-solid fa-book-open text-lg mb-1"></i><span class="text-[9px] font-medium">Docs</span></a>
-        <a href="#" data-view="fiches" class="nav-link flex flex-col items-center text-slate-400 w-1/5"><i class="fa-solid fa-clipboard-list text-lg mb-1"></i><span class="text-[9px] font-medium">Fiches</span></a>
     </nav>
 
-    <script type="module" src="app.js?v=14"></script>
+    <script type="module" src="app.js?v=16"></script>
 </body>
 </html>
