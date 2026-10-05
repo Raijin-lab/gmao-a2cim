@@ -15,9 +15,9 @@ const db = getFirestore(app);
 
 // --- BASE DE DONNÉES PARC MACHINES PAR CLIENT ---
 const parcMachines = {
-    "Maghreb Steel": ["Hypertherm Plasma XPR300", "Commande Cybelec", "Oxycoupage", "Filtre Aspirateur"],
+    "Maghreb Steel": ["MESSER MULTITHERM ECO 4000", "MESSER OMNIMAT 5000"],
     "LAMALIF": ["MESSER CNIM", "Presse Plieuse", "Rouleuse Picot", "Cisaille Guillotine"],
-    "Barea": ["ERMAKSAN Presse Plieuse", "Perceuse radiale", "Scie à ruban Behringer"]
+    "Barea": ["ERMAKSAN Presse Plieuse", "ERMAKSAN plasma", "HYPERTHERM HPR260", "ERMAKSAN Presse Plieuse TENDEM", "ERMAKSAN Cisaille"]
 };
 
 // Logique de remplissage dynamique des machines selon le client choisi
