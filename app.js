@@ -112,7 +112,6 @@ if (formClientSelect && formMachineSelect) {
         const nomClient = e.target.value;
         formMachineSelect.innerHTML = '<option value="" disabled selected>Sélectionner machine...</option>';
         if (parcClientsDB[nomClient]) {
-            // AJOUT : Option pour planifier le parc complet en un clic
             if (parcClientsDB[nomClient].machines.length > 0) {
                 formMachineSelect.innerHTML += `<option value="TOUTES_LES_MACHINES" class="font-bold text-brand-600">🌟 Toutes les machines (${parcClientsDB[nomClient].machines.length})</option>`;
             }
@@ -406,7 +405,6 @@ if(document.getElementById('addInterventionForm')) {
 
         try {
             if (machineVal === "TOUTES_LES_MACHINES") {
-                // Création par lot pour tout le parc du client
                 const machinesDuClient = parcClientsDB[clientVal].machines;
                 for (const m of machinesDuClient) {
                     await addDoc(collection(db, "interventions"), {
@@ -422,7 +420,6 @@ if(document.getElementById('addInterventionForm')) {
                 }
                 alert(`${machinesDuClient.length} interventions planifiées avec succès pour ${clientVal} !`);
             } else {
-                // Création classique d'une seule machine
                 await addDoc(collection(db, "interventions"), {
                     client: clientVal,
                     machine: machineVal,
