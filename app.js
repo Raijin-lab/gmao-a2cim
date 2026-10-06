@@ -406,7 +406,7 @@ navLinks.forEach(link => {
 
 // Docs (Base PDF - Restaurée Intégralement)
 const providerDocs = {
-    "hypertherm": [{ name: "Manuel XPR170", file: "XPR170_MANUAL_EN.pdf" }, { name: "Schéma Électrique", file: "schema-electrique.pdf" }],
+    "hypertherm": [{ name: "Manuel XPR170", file: "XPR170_MANUAL_EN.pdf" }, { name: "Schéma Électrique", file: "schema-electrique.pdf" }, { name: "MAXPRO200", file: "MAXPRO200 Instruction Manual .pdf" }],
     "beckhoff": [],
     "cybelec": [],
     "messer": [],
