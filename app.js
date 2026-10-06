@@ -18,7 +18,7 @@ let allInterventions = [];
 let parcClientsDB = {}; 
 let fullCalendarInstance = null;
 let currentClientFilter = "ALL";
-let currentTypeFilter = "ALL"; // Nouveau filtre Type
+let currentTypeFilter = "ALL"; 
 
 // --- GESTION DU CODE PIN ---
 const CORRECT_PIN = "A2CIM2026";
@@ -144,10 +144,10 @@ if (document.getElementById('formAddClient')) {
         input.value = '';
     });
 }
+
 // ==========================================
-
-
-// --- CONFIG STATUTS ---
+// CONFIG STATUTS
+// ==========================================
 const statusConfig = {
     "En retard": { bg: "#fef2f2", border: "#ef4444", text: "#b91c1c", color: "#ef4444" },
     "En cours": { bg: "#fff7ed", border: "#f97316", text: "#c2410c", color: "#f97316" },
@@ -155,7 +155,9 @@ const statusConfig = {
     "Terminé": { bg: "#f0fdf4", border: "#22c55e", text: "#15803d", color: "#22c55e" }
 };
 
-// --- CALENDRIER GLOBAL ---
+// ==========================================
+// CALENDRIER GLOBAL
+// ==========================================
 function initCalendar() {
     const calendarEl = document.getElementById('calendar');
     if (!calendarEl) return;
@@ -177,17 +179,18 @@ function updateCalendarEvents() {
     if (!fullCalendarInstance) return;
     fullCalendarInstance.removeAllEvents();
     
+    const todayStr = new Date().toISOString().split('T')[0];
+
     allInterventions.forEach(data => {
-        // FILTRES (On affiche TOUT, sauf si l'utilisateur filtre exprès)
         if (currentClientFilter !== "ALL" && data.client !== currentClientFilter) return;
         if (currentTypeFilter !== "ALL" && data.type !== currentTypeFilter) return;
         
-        // COULEURS ET TITRES
-        let eventColor = statusConfig[data.statut]?.color || "#3b82f6"; // Par défaut, bleu
-        // Si c'est une urgence curative qui n'est pas encore terminée, on la force en rouge vif
-        if (data.statut === "Planifié" && data.type === "Curatif") eventColor = "#dc2626";
+        let eventColor = statusConfig[data.statut]?.color || "#3b82f6";
         
-        // Icône visuelle dans le calendrier
+        // Détection automatique : rouge vif si retard ou urgence planifiée
+        if (data.statut !== "Terminé" && data.date < todayStr) eventColor = "#ef4444"; // Retard
+        else if (data.statut === "Planifié" && data.type === "Curatif") eventColor = "#ef4444"; // Urgence
+        
         let eventTitle = data.type === "Curatif" ? `🚨 ${data.machine}` : `🔧 ${data.machine}`;
 
         fullCalendarInstance.addEvent({
@@ -201,15 +204,10 @@ function updateCalendarEvents() {
     });
 }
 
-// Écouteurs de filtres Calendrier
 const clientFilterSelect = document.getElementById('calendarClientFilter');
-if (clientFilterSelect) {
-    clientFilterSelect.addEventListener('change', (e) => { currentClientFilter = e.target.value; updateCalendarEvents(); });
-}
+if (clientFilterSelect) clientFilterSelect.addEventListener('change', (e) => { currentClientFilter = e.target.value; updateCalendarEvents(); });
 const typeFilterSelect = document.getElementById('calendarTypeFilter');
-if (typeFilterSelect) {
-    typeFilterSelect.addEventListener('change', (e) => { currentTypeFilter = e.target.value; updateCalendarEvents(); });
-}
+if (typeFilterSelect) typeFilterSelect.addEventListener('change', (e) => { currentTypeFilter = e.target.value; updateCalendarEvents(); });
 
 document.addEventListener('DOMContentLoaded', initCalendar);
 
@@ -272,17 +270,27 @@ document.getElementById('btnSetTermine').addEventListener('click', async () => {
     fermerActionModal();
 });
 
-// --- SYNCHRONISATION INTERVENTIONS ---
+
+// ==========================================
+// SYNCHRONISATION & TABLEAU DE BORD INTELLIGENT
+// ==========================================
 const q = query(collection(db, "interventions"), orderBy("date", "asc"));
 onSnapshot(q, (snapshot) => {
-    const dashboardContainer = document.getElementById('tasks-container');
+    // Les conteneurs du Tableau de Bord (2 colonnes)
+    const urgentContainer = document.getElementById('urgent-tasks-container');
+    const upcomingContainer = document.getElementById('upcoming-tasks-container');
+    
+    // Le conteneur Curatif (Onglet séparé)
     const curatifContainer = document.getElementById('curatif-container');
     
-    if (dashboardContainer) dashboardContainer.innerHTML = '';
+    if (urgentContainer) urgentContainer.innerHTML = '';
+    if (upcomingContainer) upcomingContainer.innerHTML = '';
     if (curatifContainer) curatifContainer.innerHTML = '';
     
     allInterventions = [];
     let activeTotalCount = 0; let retardCount = 0; let enCoursCount = 0;
+    
+    const todayStr = new Date().toISOString().split('T')[0];
 
     snapshot.forEach((docSnap) => {
         const data = docSnap.data();
@@ -290,26 +298,36 @@ onSnapshot(q, (snapshot) => {
         allInterventions.push(data);
 
         if (data.statut === "Terminé") return;
+        
         activeTotalCount++;
-        if (data.statut === "En retard") retardCount++;
+        
+        // Détecteur automatique de retard
+        const isRetard = data.date < todayStr;
+        
+        if (data.statut === "En retard" || isRetard) retardCount++;
         if (data.statut === "En cours") enCoursCount++;
 
         const dateAffichee = data.date ? new Date(data.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
-        const config = statusConfig[data.statut] || statusConfig["Planifié"];
+        
+        // On force la couleur rouge si c'est en retard automatique
+        let currentConfig = statusConfig[data.statut] || statusConfig["Planifié"];
+        if (isRetard && data.statut === "Planifié") currentConfig = statusConfig["En retard"];
+
         const initialTech = data.technicien ? data.technicien.charAt(0).toUpperCase() : '?';
         const badgeFrequence = data.frequence && data.frequence !== "Ponctuel" ? `<span class="ml-2 text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded border border-slate-200"><i class="fa-solid fa-rotate mr-1"></i>${data.frequence}</span>` : '';
         const badgeCuratif = data.type === "Curatif" ? `<span class="ml-2 text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded border border-red-200 font-bold">URGENCE</span>` : '';
+        const libelleStatut = (isRetard && data.statut === "Planifié") ? "En retard" : data.statut;
         
         const cardHTML = `
             <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex items-center justify-between hover:shadow-md transition-shadow">
                 <div class="flex items-center flex-1">
-                    <div class="w-2 self-stretch border-l-4" style="background-color: ${config.bg}; border-color: ${config.border};"></div>
+                    <div class="w-2 self-stretch border-l-4" style="background-color: ${currentConfig.bg}; border-color: ${currentConfig.border};"></div>
                     <div class="p-4 flex-1 flex flex-col sm:flex-row sm:items-center justify-between">
                         <div class="mb-3 sm:mb-0">
                             <div class="flex items-center flex-wrap gap-1 mb-1">
                                 <span class="text-xs font-bold text-slate-500 uppercase">${data.client}</span>
                                 <span class="w-1 h-1 rounded-full bg-slate-300 mx-1"></span>
-                                <span class="text-xs text-slate-500 font-medium">${dateAffichee}</span>
+                                <span class="text-xs text-slate-500 font-medium ${isRetard ? 'text-red-500 font-bold' : ''}">${dateAffichee}</span>
                                 ${badgeFrequence} ${badgeCuratif}
                             </div>
                             <h3 class="font-bold text-slate-800 text-sm md:text-base">${data.machine}</h3>
@@ -317,8 +335,8 @@ onSnapshot(q, (snapshot) => {
                         </div>
                         <div class="flex items-center space-x-4">
                             <div class="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600">${initialTech}</div>
-                            <div class="px-2.5 py-1 rounded-md flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider border border-opacity-20" style="background-color: ${config.bg}; color: ${config.text}; border-color: ${config.border};">
-                                <span>${data.statut}</span>
+                            <div class="px-2.5 py-1 rounded-md flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider border border-opacity-20" style="background-color: ${currentConfig.bg}; color: ${currentConfig.text}; border-color: ${currentConfig.border};">
+                                <span>${libelleStatut}</span>
                             </div>
                         </div>
                     </div>
@@ -327,9 +345,19 @@ onSnapshot(q, (snapshot) => {
             </div>
         `;
 
-        if (dashboardContainer) dashboardContainer.innerHTML += cardHTML;
+        // Logique de dispatch dans les 2 colonnes du Dashboard
+        if (data.type === "Curatif" || isRetard || data.statut === "En retard") {
+            if (urgentContainer) urgentContainer.innerHTML += cardHTML;
+        } else {
+            if (upcomingContainer) upcomingContainer.innerHTML += cardHTML;
+        }
+        
+        // La vue 100% Curatif reste alimentée normalement
         if (data.type === "Curatif" && curatifContainer) curatifContainer.innerHTML += cardHTML;
     });
+
+    if (urgentContainer && urgentContainer.innerHTML === '') urgentContainer.innerHTML = '<p class="text-slate-400 text-sm italic py-2">Super ! Aucune urgence ni retard.</p>';
+    if (upcomingContainer && upcomingContainer.innerHTML === '') upcomingContainer.innerHTML = '<p class="text-slate-400 text-sm italic py-2">Aucune maintenance préventive prévue pour le moment.</p>';
 
     if (document.getElementById('kpi-total')) document.getElementById('kpi-total').textContent = activeTotalCount;
     if (document.getElementById('kpi-retard')) document.getElementById('kpi-retard').textContent = retardCount;
@@ -404,9 +432,16 @@ navLinks.forEach(link => {
     });
 });
 
-// Docs (Base PDF - Restaurée Intégralement)
+// Docs (Base PDF - Exemple avec des vrais fichiers)
 const providerDocs = {
-    "hypertherm": [{ name: "Manuel XPR170", file: "XPR170_MANUAL_EN.pdf" }, { name: "MAXPRO200", file: "MAXPRO200 Instruction Manual.pdf" }, { name: "HPR260AutoGasPREVENTIF", file: "HPR260 Auto Gas PREVENTIF.pdf" }, { name: "HPR260 MANUAL-GAS", file: "HPR260 MANUAL-GAS.pdf" }, { name: "HPR260XD Manual Gas Manual", file: "HPR260XD Manual Gas Manual.pdf" }, { name: "Manuel xpr300", file: "Manuel xpr300.pdf" }],
+    "hypertherm": [
+        { name: "Manuel XPR170", file: "XPR170_MANUAL_EN.pdf" }, 
+        { name: "MAXPRO200", file: "MAXPRO200 Instruction Manual.pdf" },
+        { name: "HPR260AutoGasPREVENTIF", file: "HPR260 Auto Gas PREVENTIF.pdf" },
+        { name: "HPR260 MANUAL-GAS", file: "HPR260 MANUAL-GAS.pdf" },
+        { name: "HPR260XD Manual Gas Manual", file: "HPR260XD Manual Gas Manual.pdf" },
+        { name: "Manuel xpr300", file: "Manuel xpr300.pdf" }
+    ],
     "beckhoff": [],
     "cybelec": [],
     "messer": [],
