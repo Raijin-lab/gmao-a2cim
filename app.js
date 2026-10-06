@@ -406,7 +406,7 @@ navLinks.forEach(link => {
 
 // Docs (Base PDF - Restaurée Intégralement)
 const providerDocs = {
-   "hypertherm": [{ name: "Manuel XPR170", file: "XPR170_MANUAL_EN.pdf" }, { name: "MAXPRO200", file: "MAXPRO200 Instruction Manual.pdf" }, { name: "HPR260AutoGasPREVENTIF", file: "HPR260 Auto Gas PREVENTIF.pdf" }, { name: "HPR260 MANUAL-GAS", file: "HPR260 MANUAL-GAS.pdf" }, { name: "HPR260XD Manual Gas Manual", file: "HPR260XD Manual Gas Manual.pdf" }, { name: "Manuel xpr300", file: "Manuel xpr300.pdf" }],
+   "hypertherm": [{ name: "Manuel XPR170", file: "XPR170_MANUAL_EN.pdf" }, { name: "MAXPRO200", file: "MAXPRO200 Instruction Manual .pdf" }, { name: "HPR260AutoGasPREVENTIF", file: "HPR260 Auto Gas PREVENTIF.pdf" }, { name: "HPR260 MANUAL-GAS", file: "HPR260 MANUAL-GAS.pdf" }, { name: "HPR260XD Manual Gas Manual", file: "HPR260XD Manual Gas Manual.pdf" }, { name: "Manuel xpr300", file: "Manuel xpr300.pdf" }],
     "beckhoff": [],
     "cybelec": [],
     "messer": [],
