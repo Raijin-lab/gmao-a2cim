@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1e3a8a">
     <title>GMAO pro A2CIM - Tableau de bord</title>
 
-    <link rel="stylesheet" href="style.css?v=20">
+    <link rel="stylesheet" href="style.css?v=21">
     <link rel="manifest" href="manifest.json">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -29,6 +29,12 @@
         .fc { --fc-button-bg-color: #3b82f6; --fc-button-border-color: #3b82f6; --fc-button-hover-bg-color: #2563eb; --fc-button-hover-border-color: #2563eb; --fc-button-active-bg-color: #1e40af; }
         .fc-toolbar-title { font-size: 1.25rem !important; font-weight: 700 !important; color: #1e293b; }
         .fc-event { cursor: pointer; border: none !important; padding: 4px; border-radius: 4px; font-weight: 500; font-size: 0.75rem; }
+        
+        /* Design discret pour les barres de défilement internes du tableau de bord */
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+        .custom-scroll::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
     </style>
 </head>
 <body class="text-slate-800 antialiased font-sans flex h-screen overflow-hidden">
@@ -133,20 +139,22 @@
                 </div>
 
                 <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                    <!-- Colonne 1 : Urgences et Retards -->
+                    <!-- Colonne 1 : Urgences et Retards (AVEC SCROLL) -->
                     <div class="bg-slate-50/50 p-4 rounded-2xl border border-red-100">
                         <h2 class="text-lg font-bold text-red-600 mb-4 flex items-center">
                             <i class="fa-solid fa-fire mr-2"></i> Urgences & Retards
                         </h2>
-                        <div id="urgent-tasks-container" class="space-y-3"></div>
+                        <!-- Limite de hauteur max-h-[450px] avec défilement custom-scroll -->
+                        <div id="urgent-tasks-container" class="space-y-3 max-h-[450px] overflow-y-auto custom-scroll pr-2"></div>
                     </div>
 
-                    <!-- Colonne 2 : Préventif à venir -->
+                    <!-- Colonne 2 : Préventif à venir (AVEC SCROLL) -->
                     <div class="bg-slate-50/50 p-4 rounded-2xl border border-blue-100">
                         <h2 class="text-lg font-bold text-brand-600 mb-4 flex items-center">
                             <i class="fa-solid fa-calendar-check mr-2"></i> Préventif à venir
                         </h2>
-                        <div id="upcoming-tasks-container" class="space-y-3"></div>
+                        <!-- Limite de hauteur max-h-[450px] avec défilement custom-scroll -->
+                        <div id="upcoming-tasks-container" class="space-y-3 max-h-[450px] overflow-y-auto custom-scroll pr-2"></div>
                     </div>
                 </div>
             </div>
@@ -289,8 +297,13 @@
                             <label class="block text-sm font-medium text-slate-700 mb-1">Technicien</label>
                             <select id="formTech" required class="w-full px-3 py-2.5 border rounded-xl text-sm bg-white">
                                 <option value="" disabled selected>Assigner à...</option>
-                                <option value="Zouhair">Zouhair</option>
-                                <option value="OUELD LAFNICHA">Oueld Lafnicha</option>
+                                <!-- Liste de l'équipe complète A2CIM -->
+                                <option value="NABIL">NABIL</option>
+                                <option value="MEHDI">MEHDI</option>
+                                <option value="BELKADI">BELKADI</option>
+                                <option value="ABDELOUAHED">ABDELOUAHED</option>
+                                <option value="OUELD LAFNISHA">OUELD LAFNISHA</option>
+                                <option value="ZOUHAIR">ZOUHAIR</option>
                             </select>
                         </div>
                     </div>
@@ -360,6 +373,6 @@
         <a href="#" data-view="docs" class="nav-link flex flex-col items-center text-slate-400 w-1/5"><i class="fa-solid fa-book-open text-lg mb-1"></i><span class="text-[9px] font-medium">Docs</span></a>
     </nav>
 
-    <script type="module" src="app.js?v=20"></script>
+    <script type="module" src="app.js?v=21"></script>
 </body>
 </html>
