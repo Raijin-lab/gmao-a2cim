@@ -18,6 +18,7 @@ let allInterventions = [];
 let parcClientsDB = {}; 
 let fullCalendarInstance = null;
 let currentClientFilter = "ALL";
+let currentTypeFilter = "ALL"; // Nouveau filtre Type
 
 // --- GESTION DU CODE PIN ---
 const CORRECT_PIN = "A2CIM2026";
@@ -154,7 +155,7 @@ const statusConfig = {
     "Terminé": { bg: "#f0fdf4", border: "#22c55e", text: "#15803d", color: "#22c55e" }
 };
 
-// --- CALENDRIER ---
+// --- CALENDRIER GLOBAL ---
 function initCalendar() {
     const calendarEl = document.getElementById('calendar');
     if (!calendarEl) return;
@@ -177,22 +178,39 @@ function updateCalendarEvents() {
     fullCalendarInstance.removeAllEvents();
     
     allInterventions.forEach(data => {
-        if (data.type !== "Préventif") return;
+        // FILTRES (On affiche TOUT, sauf si l'utilisateur filtre exprès)
         if (currentClientFilter !== "ALL" && data.client !== currentClientFilter) return;
+        if (currentTypeFilter !== "ALL" && data.type !== currentTypeFilter) return;
         
-        const eventConfig = statusConfig[data.statut] || statusConfig["Planifié"];
+        // COULEURS ET TITRES
+        let eventColor = statusConfig[data.statut]?.color || "#3b82f6"; // Par défaut, bleu
+        // Si c'est une urgence curative qui n'est pas encore terminée, on la force en rouge vif
+        if (data.statut === "Planifié" && data.type === "Curatif") eventColor = "#dc2626";
+        
+        // Icône visuelle dans le calendrier
+        let eventTitle = data.type === "Curatif" ? `🚨 ${data.machine}` : `🔧 ${data.machine}`;
+
         fullCalendarInstance.addEvent({
-            id: data.id, title: data.machine, start: data.date,
-            backgroundColor: eventConfig.color, borderColor: eventConfig.color,
+            id: data.id, 
+            title: eventTitle, 
+            start: data.date,
+            backgroundColor: eventColor, 
+            borderColor: eventColor,
             extendedProps: { client: data.client, statut: data.statut, frequence: data.frequence || 'Ponctuel', type: data.type, machine: data.machine, technicien: data.technicien }
         });
     });
 }
 
+// Écouteurs de filtres Calendrier
 const clientFilterSelect = document.getElementById('calendarClientFilter');
 if (clientFilterSelect) {
     clientFilterSelect.addEventListener('change', (e) => { currentClientFilter = e.target.value; updateCalendarEvents(); });
 }
+const typeFilterSelect = document.getElementById('calendarTypeFilter');
+if (typeFilterSelect) {
+    typeFilterSelect.addEventListener('change', (e) => { currentTypeFilter = e.target.value; updateCalendarEvents(); });
+}
+
 document.addEventListener('DOMContentLoaded', initCalendar);
 
 // --- MODAL ACTION (CALENDRIER) ---
@@ -239,7 +257,6 @@ document.getElementById('btnSetTermine').addEventListener('click', async () => {
     if (freq !== "Ponctuel") {
         const nouvelleDateStr = calculerProchaineDate(interventionData.date, freq);
         
-        // LA CRÉATION RESPECTE STRICTEMENT LES RÈGLES FIREBASE
         await addDoc(collection(db, "interventions"), {
             client: interventionData.client, 
             machine: interventionData.machine,
