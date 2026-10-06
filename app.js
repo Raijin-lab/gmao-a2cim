@@ -477,7 +477,12 @@ const providerDocs = {
     ],
     "beckhoff": [],
     "cybelec": [],
-    "messer": [],
+    "messer": [
+         { name: "BLOCOTELHA", file: "289001273-CIRCUIT_DIAGRAM-blocotelha.pdf" },
+         { name: "MAGHREBSTEEL-OMNIMAT", file: "260001958-CIRCUIT_DIAGRAM-maghrebsteel-OMNIMAT.PDF" },
+         { name: "MAGHREBSTEEL-MULTITHERM-ECO", file: "286002000-CIRCUIT_DIAGRAM-maghrebsteel-MULTITERM.pdf" },
+         { name: "SEFACAR", file: "289001295-CIRCUIT_DIAGRAM-SEFACAR.pdf" },
+    ],
     "soprolec": [],
     "fiessler": [],
     "gullco": [],
