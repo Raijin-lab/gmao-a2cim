@@ -112,6 +112,10 @@ if (formClientSelect && formMachineSelect) {
         const nomClient = e.target.value;
         formMachineSelect.innerHTML = '<option value="" disabled selected>Sélectionner machine...</option>';
         if (parcClientsDB[nomClient]) {
+            // AJOUT : Option pour planifier le parc complet en un clic
+            if (parcClientsDB[nomClient].machines.length > 0) {
+                formMachineSelect.innerHTML += `<option value="TOUTES_LES_MACHINES" class="font-bold text-brand-600">🌟 Toutes les machines (${parcClientsDB[nomClient].machines.length})</option>`;
+            }
             parcClientsDB[nomClient].machines.forEach(m => {
                 formMachineSelect.innerHTML += `<option value="${m}">${m}</option>`;
             });
@@ -187,9 +191,8 @@ function updateCalendarEvents() {
         
         let eventColor = statusConfig[data.statut]?.color || "#3b82f6";
         
-        // Détection automatique : rouge vif si retard ou urgence planifiée
-        if (data.statut !== "Terminé" && data.date < todayStr) eventColor = "#ef4444"; // Retard
-        else if (data.statut === "Planifié" && data.type === "Curatif") eventColor = "#ef4444"; // Urgence
+        if (data.statut !== "Terminé" && data.date < todayStr) eventColor = "#ef4444"; 
+        else if (data.statut === "Planifié" && data.type === "Curatif") eventColor = "#ef4444"; 
         
         let eventTitle = data.type === "Curatif" ? `🚨 ${data.machine}` : `🔧 ${data.machine}`;
 
@@ -234,7 +237,6 @@ document.getElementById('btnSetEnCours').addEventListener('click', async () => {
     await updateDoc(doc(db, "interventions", id), { statut: "En cours" }); fermerActionModal();
 });
 
-// --- MOTEUR RÉCURRENCE CONTRAT ---
 function calculerProchaineDate(dateInitiale, frequence) {
     const dateObj = new Date(dateInitiale);
     if (frequence === "Mensuel") dateObj.setMonth(dateObj.getMonth() + 1);
@@ -276,11 +278,8 @@ document.getElementById('btnSetTermine').addEventListener('click', async () => {
 // ==========================================
 const q = query(collection(db, "interventions"), orderBy("date", "asc"));
 onSnapshot(q, (snapshot) => {
-    // Les conteneurs du Tableau de Bord (2 colonnes)
     const urgentContainer = document.getElementById('urgent-tasks-container');
     const upcomingContainer = document.getElementById('upcoming-tasks-container');
-    
-    // Le conteneur Curatif (Onglet séparé)
     const curatifContainer = document.getElementById('curatif-container');
     
     if (urgentContainer) urgentContainer.innerHTML = '';
@@ -289,7 +288,6 @@ onSnapshot(q, (snapshot) => {
     
     allInterventions = [];
     let activeTotalCount = 0; let retardCount = 0; let enCoursCount = 0;
-    
     const todayStr = new Date().toISOString().split('T')[0];
 
     snapshot.forEach((docSnap) => {
@@ -300,16 +298,12 @@ onSnapshot(q, (snapshot) => {
         if (data.statut === "Terminé") return;
         
         activeTotalCount++;
-        
-        // Détecteur automatique de retard
         const isRetard = data.date < todayStr;
         
         if (data.statut === "En retard" || isRetard) retardCount++;
         if (data.statut === "En cours") enCoursCount++;
 
         const dateAffichee = data.date ? new Date(data.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
-        
-        // On force la couleur rouge si c'est en retard automatique
         let currentConfig = statusConfig[data.statut] || statusConfig["Planifié"];
         if (isRetard && data.statut === "Planifié") currentConfig = statusConfig["En retard"];
 
@@ -345,14 +339,12 @@ onSnapshot(q, (snapshot) => {
             </div>
         `;
 
-        // Logique de dispatch dans les 2 colonnes du Dashboard
         if (data.type === "Curatif" || isRetard || data.statut === "En retard") {
             if (urgentContainer) urgentContainer.innerHTML += cardHTML;
         } else {
             if (upcomingContainer) upcomingContainer.innerHTML += cardHTML;
         }
         
-        // La vue 100% Curatif reste alimentée normalement
         if (data.type === "Curatif" && curatifContainer) curatifContainer.innerHTML += cardHTML;
     });
 
@@ -367,7 +359,7 @@ onSnapshot(q, (snapshot) => {
     updateCalendarEvents();
 });
 
-// --- AJOUT INTERVENTION ---
+// --- AJOUT INTERVENTION (AVEC GESTION MULTI-MACHINES) ---
 const modal = document.getElementById('addInterventionModal');
 const formType = document.getElementById('formType');
 const freqContainer = document.getElementById('frequenceContainer');
@@ -399,19 +391,60 @@ if(document.getElementById('cancelModalBtn')) document.getElementById('cancelMod
 if(document.getElementById('addInterventionForm')) {
     document.getElementById('addInterventionForm').addEventListener('submit', async (e) => {
         e.preventDefault();
-        await addDoc(collection(db, "interventions"), {
-            client: document.getElementById('formClient').value,
-            machine: document.getElementById('formMachine').value,
-            date: document.getElementById('formDate').value,
-            type: formType.value, 
-            technicien: document.getElementById('formTech').value,
-            statut: "Planifié", 
-            frequence: document.getElementById('formFrequence').value,
-            timestamp: serverTimestamp()
-        });
-        e.target.reset();
-        document.getElementById('formMachine').innerHTML = '<option value="" disabled selected>Choisir un client d\'abord</option>';
-        closeModal();
+        
+        const btnSubmit = document.getElementById('btnSubmit');
+        const originalText = btnSubmit.innerHTML;
+        btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Création...';
+        btnSubmit.disabled = true;
+
+        const clientVal = document.getElementById('formClient').value;
+        const machineVal = document.getElementById('formMachine').value;
+        const dateVal = document.getElementById('formDate').value;
+        const typeVal = formType.value;
+        const techVal = document.getElementById('formTech').value;
+        const freqVal = document.getElementById('formFrequence').value;
+
+        try {
+            if (machineVal === "TOUTES_LES_MACHINES") {
+                // Création par lot pour tout le parc du client
+                const machinesDuClient = parcClientsDB[clientVal].machines;
+                for (const m of machinesDuClient) {
+                    await addDoc(collection(db, "interventions"), {
+                        client: clientVal,
+                        machine: m,
+                        date: dateVal,
+                        type: typeVal,
+                        technicien: techVal,
+                        statut: "Planifié",
+                        frequence: freqVal,
+                        timestamp: serverTimestamp()
+                    });
+                }
+                alert(`${machinesDuClient.length} interventions planifiées avec succès pour ${clientVal} !`);
+            } else {
+                // Création classique d'une seule machine
+                await addDoc(collection(db, "interventions"), {
+                    client: clientVal,
+                    machine: machineVal,
+                    date: dateVal,
+                    type: typeVal,
+                    technicien: techVal,
+                    statut: "Planifié",
+                    frequence: freqVal,
+                    timestamp: serverTimestamp()
+                });
+            }
+            
+            e.target.reset();
+            document.getElementById('formMachine').innerHTML = '<option value="" disabled selected>Choisir un client d\'abord</option>';
+            closeModal();
+        } catch(err) {
+            console.error(err);
+            alert("Erreur lors de la création");
+        } finally {
+            btnSubmit.innerHTML = originalText;
+            btnSubmit.disabled = false;
+        }
     });
 }
 
