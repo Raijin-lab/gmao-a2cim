@@ -84,14 +84,15 @@ onSnapshot(qClients, (snapshot) => {
 
         if (parcContainer) {
             parcContainer.innerHTML += `
-            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col relative">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col relative h-full">
                 <button onclick="supprimerClientParc('${docId}')" class="absolute top-4 right-4 text-slate-300 hover:text-red-500"><i class="fa-solid fa-trash-can"></i></button>
                 <div class="p-5 border-b border-slate-100 bg-brand-50">
                     <h3 class="text-lg font-bold text-brand-900"><i class="fa-solid fa-building mr-2 text-brand-500"></i>${data.nom}</h3>
                 </div>
-                <div class="p-5 flex-1">
-                    <div class="mb-4">${machinesListHTML}</div>
-                    <form onsubmit="ajouterMachineParc(event, '${docId}')" class="flex gap-2">
+                <div class="p-5 flex-1 flex flex-col">
+                    <!-- SCROLLBAR POUR LA LISTE DES MACHINES -->
+                    <div class="mb-4 max-h-[200px] overflow-y-auto custom-scroll pr-2">${machinesListHTML}</div>
+                    <form onsubmit="ajouterMachineParc(event, '${docId}')" class="flex gap-2 mt-auto">
                         <input type="text" id="machineInput_${docId}" placeholder="Nom machine..." required class="flex-1 px-3 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-brand-500">
                         <button type="submit" class="bg-slate-800 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-slate-700"><i class="fa-solid fa-plus"></i></button>
                     </form>
@@ -306,7 +307,13 @@ onSnapshot(q, (snapshot) => {
         let currentConfig = statusConfig[data.statut] || statusConfig["Planifié"];
         if (isRetard && data.statut === "Planifié") currentConfig = statusConfig["En retard"];
 
-        const initialTech = data.technicien ? data.technicien.charAt(0).toUpperCase() : '?';
+        // AFFICHAGE DES AVATARS MULTIPLES
+        const listTechs = data.technicien ? data.technicien.split(', ') : ['?'];
+        let avatarsHTML = '';
+        listTechs.forEach(t => {
+            avatarsHTML += `<div class="w-6 h-6 rounded-full bg-slate-200 border border-white flex items-center justify-center text-[10px] font-bold text-slate-600 -ml-1.5 first:ml-0 shadow-sm" title="${t}">${t.charAt(0).toUpperCase()}</div>`;
+        });
+
         const badgeFrequence = data.frequence && data.frequence !== "Ponctuel" ? `<span class="ml-2 text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded border border-slate-200"><i class="fa-solid fa-rotate mr-1"></i>${data.frequence}</span>` : '';
         const badgeCuratif = data.type === "Curatif" ? `<span class="ml-2 text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded border border-red-200 font-bold">URGENCE</span>` : '';
         const libelleStatut = (isRetard && data.statut === "Planifié") ? "En retard" : data.statut;
@@ -327,7 +334,10 @@ onSnapshot(q, (snapshot) => {
                             <p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-wrench mr-1"></i> ${data.type}</p>
                         </div>
                         <div class="flex items-center space-x-4">
-                            <div class="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600">${initialTech}</div>
+                            <!-- Affichage en mode pastilles superposées -->
+                            <div class="flex items-center">
+                                ${avatarsHTML}
+                            </div>
                             <div class="px-2.5 py-1 rounded-md flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider border border-opacity-20" style="background-color: ${currentConfig.bg}; color: ${currentConfig.text}; border-color: ${currentConfig.border};">
                                 <span>${libelleStatut}</span>
                             </div>
@@ -358,7 +368,7 @@ onSnapshot(q, (snapshot) => {
     updateCalendarEvents();
 });
 
-// --- AJOUT INTERVENTION (AVEC GESTION MULTI-MACHINES) ---
+// --- AJOUT INTERVENTION (AVEC GESTION MULTI-TECH & MULTI-MACHINES) ---
 const modal = document.getElementById('addInterventionModal');
 const formType = document.getElementById('formType');
 const freqContainer = document.getElementById('frequenceContainer');
@@ -393,6 +403,15 @@ if(document.getElementById('addInterventionForm')) {
         
         const btnSubmit = document.getElementById('btnSubmit');
         const originalText = btnSubmit.innerHTML;
+        
+        // RECUPERATION DES TECHNICIENS COCHES
+        const techCheckboxes = document.querySelectorAll('input[name="tech"]:checked');
+        if (techCheckboxes.length === 0) {
+            alert("⚠️ Veuillez sélectionner au moins un technicien.");
+            return;
+        }
+        const techVal = Array.from(techCheckboxes).map(cb => cb.value).join(', ');
+
         btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Création...';
         btnSubmit.disabled = true;
 
@@ -400,7 +419,6 @@ if(document.getElementById('addInterventionForm')) {
         const machineVal = document.getElementById('formMachine').value;
         const dateVal = document.getElementById('formDate').value;
         const typeVal = formType.value;
-        const techVal = document.getElementById('formTech').value;
         const freqVal = document.getElementById('formFrequence').value;
 
         try {
@@ -462,7 +480,7 @@ navLinks.forEach(link => {
     });
 });
 
-// Docs (Base PDF - Exemple avec des vrais fichiers)
+// Docs (Base PDF)
 const providerDocs = {
     "hypertherm": [
         { name: "Manuel XPR170", file: "XPR170_MANUAL_EN.pdf" }, 
