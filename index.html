@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1e3a8a">
     <title>GMAO pro A2CIM - Tableau de bord</title>
 
-    <link rel="stylesheet" href="style.css?v=18">
+    <link rel="stylesheet" href="style.css?v=19">
     <link rel="manifest" href="manifest.json">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -34,7 +34,7 @@
 <body class="text-slate-800 antialiased font-sans flex h-screen overflow-hidden">
 
     <!-- ÉCRAN DE VERROUILLAGE -->
-    <div id="lockScreen" class="fixed inset-0 bg-brand-900 z-50 hidden items-center justify-center p-4">
+    <div id="lockScreen" class="fixed inset-0 bg-brand-900 z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-8 text-center">
             <div class="w-16 h-16 bg-brand-50 text-brand-900 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-inner">
                 <i class="fa-solid fa-lock"></i>
@@ -65,7 +65,6 @@
             <a href="#" data-view="dashboard" class="nav-link flex items-center space-x-3 px-4 py-3 bg-brand-800 text-white rounded-xl transition-colors">
                 <i class="fa-solid fa-chart-pie w-6 text-center"></i><span class="font-medium">Tableau de Bord</span>
             </a>
-            <!-- LE CALENDRIER DEVIENT GLOBAL -->
             <a href="#" data-view="planning" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl transition-colors">
                 <i class="fa-solid fa-calendar-days w-6 text-center"></i><span class="font-medium">Calendrier Global</span>
             </a>
@@ -95,11 +94,11 @@
 
         <main class="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 no-scrollbar w-full relative">
             
-            <!-- VUE 1 : TABLEAU DE BORD -->
+            <!-- VUE 1 : TABLEAU DE BORD (Nouveau design 2 colonnes) -->
             <div id="view-dashboard" class="app-view">
                 <header class="mb-8">
                     <h2 class="text-2xl font-bold text-slate-800">Aperçu du Parc</h2>
-                    <p class="text-slate-500 text-sm mt-1">GMAO Synchronisée (Firebase)</p>
+                    <p class="text-slate-500 text-sm mt-1">Centre de contrôle A2CIM en temps réel</p>
                 </header>
 
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -133,13 +132,31 @@
                     </div>
                 </div>
 
-                <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-lg font-bold text-slate-800">Liste des Interventions (Toutes)</h2>
+                <!-- NOUVELLES COLONNES DU TABLEAU DE BORD -->
+                <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                    <!-- Colonne 1 : Urgences et Retards -->
+                    <div class="bg-slate-50/50 p-4 rounded-2xl border border-red-100">
+                        <h2 class="text-lg font-bold text-red-600 mb-4 flex items-center">
+                            <i class="fa-solid fa-fire mr-2"></i> Urgences & Retards
+                        </h2>
+                        <div id="urgent-tasks-container" class="space-y-3">
+                            <!-- Rempli par JS -->
+                        </div>
+                    </div>
+
+                    <!-- Colonne 2 : Préventif à venir -->
+                    <div class="bg-slate-50/50 p-4 rounded-2xl border border-blue-100">
+                        <h2 class="text-lg font-bold text-brand-600 mb-4 flex items-center">
+                            <i class="fa-solid fa-calendar-check mr-2"></i> Préventif à venir
+                        </h2>
+                        <div id="upcoming-tasks-container" class="space-y-3">
+                            <!-- Rempli par JS -->
+                        </div>
+                    </div>
                 </div>
-                <div id="tasks-container" class="space-y-3"></div>
             </div>
 
-            <!-- VUE 2 : CALENDRIER GLOBAL (Modifié pour tout afficher) -->
+            <!-- VUE 2 : CALENDRIER GLOBAL -->
             <div id="view-planning" class="app-view hidden">
                 <header class="mb-6 flex flex-col xl:flex-row justify-between items-start xl:items-end space-y-4 xl:space-y-0">
                     <div>
@@ -201,7 +218,7 @@
                 </div>
             </div>
 
-            <!-- VUE 5 : BASE DOCUMENTAIRE (Intégrale) -->
+            <!-- VUE 5 : BASE DOCUMENTAIRE -->
             <div id="view-docs" class="app-view hidden">
                 <header class="mb-6">
                     <h2 class="text-2xl font-bold text-slate-800">Base Documentaire Technique</h2>
@@ -243,7 +260,8 @@
         </main>
     </div>
 
-    <!-- Modal Ajout Intervention -->
+    <!-- Modals (Add / Action / Docs) inchangés par rapport à v18... -->
+    <!-- Modal Ajout -->
     <div id="addInterventionModal" class="fixed inset-0 bg-slate-900 bg-opacity-60 hidden items-center justify-center z-50 px-4 backdrop-blur-sm transition-opacity">
         <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full flex flex-col max-h-[90vh]">
             <div class="px-6 py-4 border-b flex justify-between items-center bg-slate-50">
