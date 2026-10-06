@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1e3a8a">
     <title>GMAO pro A2CIM - Tableau de bord</title>
 
-    <link rel="stylesheet" href="style.css?v=19">
+    <link rel="stylesheet" href="style.css?v=20">
     <link rel="manifest" href="manifest.json">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -33,7 +33,7 @@
 </head>
 <body class="text-slate-800 antialiased font-sans flex h-screen overflow-hidden">
 
-    <!-- ÉCRAN DE VERROUILLAGE -->
+    <!-- ÉCRAN DE VERROUILLAGE (Désactivé avec hidden) -->
     <div id="lockScreen" class="fixed inset-0 bg-brand-900 z-50 hidden items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-8 text-center">
             <div class="w-16 h-16 bg-brand-50 text-brand-900 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-inner">
@@ -94,7 +94,7 @@
 
         <main class="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 no-scrollbar w-full relative">
             
-            <!-- VUE 1 : TABLEAU DE BORD (Nouveau design 2 colonnes) -->
+            <!-- VUE 1 : TABLEAU DE BORD -->
             <div id="view-dashboard" class="app-view">
                 <header class="mb-8">
                     <h2 class="text-2xl font-bold text-slate-800">Aperçu du Parc</h2>
@@ -132,16 +132,13 @@
                     </div>
                 </div>
 
-                <!-- NOUVELLES COLONNES DU TABLEAU DE BORD -->
                 <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
                     <!-- Colonne 1 : Urgences et Retards -->
                     <div class="bg-slate-50/50 p-4 rounded-2xl border border-red-100">
                         <h2 class="text-lg font-bold text-red-600 mb-4 flex items-center">
                             <i class="fa-solid fa-fire mr-2"></i> Urgences & Retards
                         </h2>
-                        <div id="urgent-tasks-container" class="space-y-3">
-                            <!-- Rempli par JS -->
-                        </div>
+                        <div id="urgent-tasks-container" class="space-y-3"></div>
                     </div>
 
                     <!-- Colonne 2 : Préventif à venir -->
@@ -149,9 +146,7 @@
                         <h2 class="text-lg font-bold text-brand-600 mb-4 flex items-center">
                             <i class="fa-solid fa-calendar-check mr-2"></i> Préventif à venir
                         </h2>
-                        <div id="upcoming-tasks-container" class="space-y-3">
-                            <!-- Rempli par JS -->
-                        </div>
+                        <div id="upcoming-tasks-container" class="space-y-3"></div>
                     </div>
                 </div>
             </div>
@@ -166,7 +161,7 @@
                     
                     <div class="flex flex-col sm:flex-row gap-3 w-full xl:w-auto">
                         <div class="w-full sm:w-48">
-                            <label class="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Type d'intervention</label>
+                            <label class="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Type</label>
                             <select id="calendarTypeFilter" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white shadow-sm">
                                 <option value="ALL" selected>Tout afficher</option>
                                 <option value="Préventif">Préventif (Contrats)</option>
@@ -174,10 +169,9 @@
                             </select>
                         </div>
                         <div class="w-full sm:w-48">
-                            <label class="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Filtrer par Client</label>
+                            <label class="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Client</label>
                             <select id="calendarClientFilter" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white shadow-sm">
                                 <option value="ALL" selected>Tous les clients</option>
-                                <!-- Rempli dynamiquement -->
                             </select>
                         </div>
                     </div>
@@ -260,7 +254,6 @@
         </main>
     </div>
 
-    <!-- Modals (Add / Action / Docs) inchangés par rapport à v18... -->
     <!-- Modal Ajout -->
     <div id="addInterventionModal" class="fixed inset-0 bg-slate-900 bg-opacity-60 hidden items-center justify-center z-50 px-4 backdrop-blur-sm transition-opacity">
         <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full flex flex-col max-h-[90vh]">
@@ -324,7 +317,9 @@
             </div>
             <div class="px-6 py-4 border-t bg-slate-50 flex justify-end space-x-3">
                 <button type="button" id="cancelModalBtn" class="px-4 py-2.5 text-sm bg-white border rounded-xl">Annuler</button>
-                <button type="submit" form="addInterventionForm" id="btnSubmit" class="px-4 py-2.5 text-sm text-white bg-brand-500 rounded-xl">Enregistrer</button>
+                <button type="submit" form="addInterventionForm" id="btnSubmit" class="px-4 py-2.5 text-sm text-white bg-brand-500 hover:bg-brand-600 rounded-xl transition-colors">
+                    <i class="fa-solid fa-save mr-2"></i> Enregistrer
+                </button>
             </div>
         </div>
     </div>
@@ -365,6 +360,6 @@
         <a href="#" data-view="docs" class="nav-link flex flex-col items-center text-slate-400 w-1/5"><i class="fa-solid fa-book-open text-lg mb-1"></i><span class="text-[9px] font-medium">Docs</span></a>
     </nav>
 
-    <script type="module" src="app.js?v=19"></script>
+    <script type="module" src="app.js?v=20"></script>
 </body>
 </html>
