@@ -39,16 +39,11 @@ window.ouvrirModalKit = function(client, machine) {
 }
 window.fermerKitModal = function() { document.getElementById('kitModal').classList.add('hidden'); document.getElementById('kitModal').classList.remove('flex'); }
 window.ajouterPieceAuKitTemp = function() {
-    const ref = document.getElementById('kitNewRef').value.trim() || "N/A";
-    const nom = document.getElementById('kitNewNom').value.trim();
-    const qte = parseInt(document.getElementById('qtePieceKit').value);
+    const ref = document.getElementById('kitNewRef').value.trim() || "N/A"; const nom = document.getElementById('kitNewNom').value.trim(); const qte = parseInt(document.getElementById('qtePieceKit').value);
     if (!nom || qte < 1) return alert("Veuillez saisir au moins la désignation et la quantité.");
-    
     const existingIndex = tempKitPieces.findIndex(p => p.ref === ref && p.nom === nom);
     if (existingIndex >= 0) { tempKitPieces[existingIndex].qte = qte; } else { tempKitPieces.push({ ref: ref, nom: nom, qte: qte }); }
-    
-    document.getElementById('kitNewRef').value = ''; document.getElementById('kitNewNom').value = ''; document.getElementById('qtePieceKit').value = '1';
-    afficherPiecesKitTemp();
+    document.getElementById('kitNewRef').value = ''; document.getElementById('kitNewNom').value = ''; document.getElementById('qtePieceKit').value = '1'; afficherPiecesKitTemp();
 }
 window.retirerPieceDuKitTemp = function(ref, nom) { tempKitPieces = tempKitPieces.filter(p => !(p.ref === ref && p.nom === nom)); afficherPiecesKitTemp(); }
 function afficherPiecesKitTemp() {
@@ -152,8 +147,7 @@ function getNextHyperthermCycle(instDateStr, shifts, modele) {
     else if (nextMilestone % 730 === 0) cycleType = "24M";
     else if (nextMilestone % 365 === 0) cycleType = "12M";
 
-    const nextDateObj = new Date(instDate);
-    nextDateObj.setDate(nextDateObj.getDate() + Math.round(nextMilestone / shifts));
+    const nextDateObj = new Date(instDate); nextDateObj.setDate(nextDateObj.getDate() + Math.round(nextMilestone / shifts));
     
     return { cycleType: cycleType, dateObj: nextDateObj, parts: rules[cycleType].parts };
 }
@@ -183,8 +177,7 @@ onSnapshot(qHT, (snapshot) => {
 
 if (document.getElementById('formAddHypertherm')) {
     document.getElementById('formAddHypertherm').addEventListener('submit', async (e) => {
-        e.preventDefault(); const btnSubmit = e.target.querySelector('button[type="submit"]'); const origTxt = btnSubmit.innerHTML;
-        btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; btnSubmit.disabled = true;
+        e.preventDefault(); const btnSubmit = e.target.querySelector('button[type="submit"]'); const origTxt = btnSubmit.innerHTML; btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; btnSubmit.disabled = true;
         try {
             const client = document.getElementById('htClient').value; const machine = document.getElementById('htMachine').value;
             const modele = document.getElementById('htModel').value; const dateInst = document.getElementById('htDateInst').value; const shifts = parseInt(document.getElementById('htShifts').value);
@@ -240,7 +233,7 @@ const typeFilterSelect = document.getElementById('calendarTypeFilter'); if (type
 document.addEventListener('DOMContentLoaded', initCalendar);
 
 // ==========================================
-// MODAL D'ACTION INDIVIDUEL (NO STOCK)
+// MODAL D'ACTION (DÉTECTION INTELLIGENTE DU GROUPE)
 // ==========================================
 const actionModal = document.getElementById('eventActionModal');
 
@@ -256,8 +249,34 @@ window.ouvrirActionModal = function(eventOrId) {
     document.getElementById('actionEventId').value = id; document.getElementById('actionEventDate').value = dateVal || ""; document.getElementById('actionEventClient').value = props.client; document.getElementById('actionEventType').value = props.type;
     
     document.getElementById('btnSetEnCours').style.display = (props.statut === "Planifié") ? "block" : "none"; 
-    document.getElementById('btnSetTermine').style.display = (props.statut !== "Terminé") ? "block" : "none";
-    document.getElementById('deleteOptionsDiv').style.display = (props.statut !== "Terminé") ? "block" : "none";
+    
+    // INTELLIGENCE : Détection de plusieurs machines pour le même jour/client
+    const groupeMachines = allInterventions.filter(i => i.client === props.client && i.date === dateVal && i.type === props.type && i.statut !== "Terminé");
+    const btnGroupe = document.getElementById('btnSetTermineGroupe');
+    const btnSeul = document.getElementById('btnSetTermine');
+
+    if (props.statut !== "Terminé") {
+        document.getElementById('deleteOptionsDiv').style.display = "block";
+        if (groupeMachines.length > 1) {
+            // Affiche le gros bouton de groupe
+            btnGroupe.style.display = "block";
+            btnGroupe.innerHTML = `<i class="fa-solid fa-layer-group mr-2"></i> Clôturer le groupe (${groupeMachines.length} mach.) & Fiche Unique`;
+            // Dé-priorise le bouton individuel
+            btnSeul.style.display = "block";
+            btnSeul.innerHTML = `<i class="fa-solid fa-check mr-2"></i> Valider cette machine seule`;
+            btnSeul.className = "w-full py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl shadow-sm text-sm";
+        } else {
+            // Cas normal : 1 seule machine
+            btnGroupe.style.display = "none";
+            btnSeul.style.display = "block";
+            btnSeul.innerHTML = `<i class="fa-solid fa-check mr-2"></i> Valider et Créer Fiche`;
+            btnSeul.className = "w-full py-3 bg-green-500 hover:bg-green-600 text-white font-bold rounded-xl shadow-md transition-transform transform hover:scale-105";
+        }
+    } else {
+        btnGroupe.style.display = "none";
+        btnSeul.style.display = "none";
+        document.getElementById('deleteOptionsDiv').style.display = "none";
+    }
     
     const btnVoirFiche = document.getElementById('btnVoirFiche');
     if (props.statut === "Terminé") { btnVoirFiche.style.display = "block"; } else { btnVoirFiche.style.display = "none"; }
@@ -284,7 +303,7 @@ document.getElementById('btnDeleteGroup').addEventListener('click', async () => 
 document.getElementById('btnSetEnCours').addEventListener('click', async () => { await updateDoc(doc(db, "interventions", document.getElementById('actionEventId').value), { statut: "En cours" }); fermerActionModal(); });
 
 // ==========================================
-// CLÔTURE D'UNE MACHINE INDIVIDUELLE
+// CLÔTURE INDIVIDUELLE (1 MACHINE)
 // ==========================================
 function preRemplirFicheIndividuelle(interventionData) {
     const theKit = kitsDB[interventionData.client + "_" + interventionData.machine];
@@ -315,7 +334,7 @@ function preRemplirFicheIndividuelle(interventionData) {
 document.getElementById('btnVoirFiche').addEventListener('click', () => { const id = document.getElementById('actionEventId').value; const intv = allInterventions.find(i => i.id === id); if (intv) preRemplirFicheIndividuelle(intv); });
 
 document.getElementById('btnSetTermine').addEventListener('click', async () => {
-    const btnTermine = document.getElementById('btnSetTermine'); const orig = btnTermine.innerHTML; btnTermine.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Auto-Génération...'; btnTermine.disabled = true;
+    const btnTermine = document.getElementById('btnSetTermine'); const orig = btnTermine.innerHTML; btnTermine.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Validation...'; btnTermine.disabled = true;
     const id = document.getElementById('actionEventId').value; const intv = allInterventions.find(i => i.id === id);
     if (!intv) { fermerActionModal(); return; }
 
@@ -341,7 +360,86 @@ document.getElementById('btnSetTermine').addEventListener('click', async () => {
 });
 
 // ==========================================
-// SYNCHRO TABLEAU DE BORD (GROUPÉ) & CLOTURE MULTI-MACHINES
+// CLÔTURE GLOBALE DE PARC (MULTI-MACHINES)
+// ==========================================
+window.validerGroupeDepuisModal = async function() {
+    const client = document.getElementById('actionEventClient').value;
+    const date = document.getElementById('actionEventDate').value;
+    const type = document.getElementById('actionEventType').value;
+    
+    const toValidate = allInterventions.filter(i => i.client === client && i.date === date && i.type === type && i.statut !== "Terminé");
+    if(toValidate.length === 0) return;
+
+    const btn = document.getElementById('btnSetTermineGroupe'); const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Consolidation du Parc...'; btn.disabled = true;
+
+    try {
+        let allParts = {}; let machinesList = []; let allTechs = new Set();
+        
+        for (const m of toValidate) {
+            machinesList.push(m.machine);
+            if (m.technicien) m.technicien.split(', ').forEach(t => allTechs.add(t));
+            
+            await updateDoc(doc(db, "interventions", m.id), { statut: "Terminé" });
+
+            const freq = m.frequence || "Ponctuel";
+            if (freq === "Hypertherm") {
+                const htMachine = hyperthermDB.find(h => h.client === m.client && h.machine === m.machine);
+                if (htMachine) {
+                    const cycleInfo = getNextHyperthermCycle(htMachine.dateInstallation, htMachine.shifts || 1, htMachine.modele);
+                    await addDoc(collection(db, "interventions"), { client: m.client, machine: m.machine, date: cycleInfo.dateObj.toISOString().split('T')[0], type: "Préventif", technicien: m.technicien, statut: "Planifié", frequence: "Hypertherm", timestamp: serverTimestamp() });
+                    cycleInfo.parts.forEach(p => { if (!allParts[p.ref]) allParts[p.ref] = { nom: p.nom, qte: 0 }; allParts[p.ref].qte += 1; });
+                    
+                    let newKit = cycleInfo.parts.map(p => ({ ref: p.ref, nom: p.nom, qte: 1 }));
+                    const theKit = kitsDB[m.client + "_" + m.machine];
+                    if (theKit) { await updateDoc(doc(db, "kits", theKit.id), { pieces: newKit }); } else { await addDoc(collection(db, "kits"), { client: htMachine.client, machine: htMachine.machine, pieces: newKit }); }
+                }
+            } else {
+                if (freq !== "Ponctuel") {
+                    const dateObj = new Date(m.date);
+                    if (freq === "Mensuel") dateObj.setMonth(dateObj.getMonth() + 1); else if (freq === "Trimestriel") dateObj.setMonth(dateObj.getMonth() + 3); else if (freq === "Semestriel") dateObj.setMonth(dateObj.getMonth() + 6); else if (freq === "Annuel") dateObj.setFullYear(dateObj.getFullYear() + 1);
+                    await addDoc(collection(db, "interventions"), { client: m.client, machine: m.machine, date: dateObj.toISOString().split('T')[0], type: m.type, technicien: m.technicien, statut: "Planifié", frequence: freq, timestamp: serverTimestamp() });
+                }
+                const theKit = kitsDB[m.client + "_" + m.machine];
+                if (theKit && m.type === "Préventif") {
+                    theKit.pieces.forEach(p => { if (!allParts[p.ref]) allParts[p.ref] = { nom: p.nom, qte: 0 }; allParts[p.ref].qte += Number(p.qte); });
+                }
+            }
+        }
+
+        // AUTO-REMPLISSAGE FUSIONNÉ
+        document.getElementById('input_client').value = client;
+        document.getElementById('input_machine').value = `${toValidate.length} machine(s) (Voir détail travaux)`;
+        document.getElementById('input_date').value = new Date().toISOString().split('T')[0];
+
+        if (type === "Préventif") {
+            document.getElementById('input_forfait_ref').value = "PREV"; document.getElementById('input_forfait_nom').value = "SAV-Préventif"; document.getElementById('input_forfait_diag').value = "Maintenance Préventive Parc";
+            let texteTravaux = `Dans le cadre du contrat de maintenance préventive A2CIM, une intervention a été réalisée sur un parc de ${toValidate.length} équipement(s).\n\n`;
+            texteTravaux += `Machines concernées :\n- ${machinesList.join('\n- ')}\n\n`;
+            texteTravaux += `📌 CONTRÔLES EFFECTUÉS SUR CHAQUE MACHINE :\n- Nettoyage et dépoussiérage intégral de la source et console.\n- Vérification des tensions, des sécurités et de l'état des connectiques.\n- Contrôle des pressions de fluides et purge des circuits.\n`;
+            
+            const partsKeys = Object.keys(allParts);
+            if (partsKeys.length > 0) {
+                texteTravaux += `\n⚙️ REMPLACEMENT GLOBAL DES CONSOMMABLES (Cumul du parc) :\n`;
+                partsKeys.forEach(ref => { texteTravaux += `✓ ${allParts[ref].qte}x ${allParts[ref].nom} (Réf: ${ref})\n`; });
+            }
+            texteTravaux += `\n✅ Résultat : Ensemble des équipements remis en production.`;
+            document.getElementById('input_travaux').value = texteTravaux;
+        } else {
+            document.getElementById('input_forfait_ref').value = "DEPAN"; document.getElementById('input_forfait_nom').value = "SAV-Depannage"; document.getElementById('input_forfait_diag').value = "Intervention Curative Multi-machines"; 
+            document.getElementById('input_travaux').value = `Machines concernées : ${machinesList.join(', ')}\n\nDétail des travaux : `;
+        }
+
+        const techListContainer = document.getElementById('fiche-tech-list'); techListContainer.innerHTML = '';
+        allTechs.forEach(t => { if(t && t !== '?') { techListContainer.innerHTML += `<div class="flex items-center gap-3 mb-2 tech-row"><input type="text" class="tech-name w-1/2 p-2 border border-slate-300 rounded-lg text-sm bg-white font-bold" value="${t}"><input type="number" class="tech-qty-val w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white" placeholder="Qté" value="1" step="0.5"><select class="tech-qty-unit w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white"><option value="Heure(s)">Heure(s)</option><option value="Jour(s)">Jour(s)</option></select><button type="button" class="text-red-500 hover:text-red-700 font-bold px-2" onclick="this.parentElement.remove()">X</button></div>`; } });
+
+        fermerActionModal(); document.querySelector('a[data-view="fiches"]').click();
+
+    } catch (e) { console.error(e); alert("Erreur : " + e.message); } finally { btn.innerHTML = orig; btn.disabled = false; }
+};
+
+// ==========================================
+// SYNCHRO TABLEAU DE BORD (GROUPÉ)
 // ==========================================
 const q = query(collection(db, "interventions"), orderBy("date", "asc"));
 onSnapshot(q, (snapshot) => {
@@ -390,33 +488,24 @@ window.ouvrirModalGroupe = function(groupKey) {
     group.machines.forEach(m => { htmlContent += `<div class="flex justify-between items-center p-3 border border-slate-100 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors" onclick="fermerModalGroupe(); ouvrirActionModal('${m.id}')"><div><p class="font-bold text-slate-800">${m.machine}</p><p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-user-gear mr-1"></i> ${m.technicien}</p></div><i class="fa-solid fa-chevron-right text-slate-300"></i></div>`; });
     htmlContent += '</div>';
 
-    // NOUVEAU BOUTON : CLÔTURE GLOBALE MULTI-MACHINES
-    htmlContent += `<div class="mt-auto pt-4 border-t border-slate-200">
-        <button id="btnValiderGroupe" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-xl shadow-md transition-transform transform hover:-translate-y-1" onclick="validerGroupeEtFiche('${groupKey}')">
-            <i class="fa-solid fa-file-signature mr-2"></i> Clôturer les ${group.machines.length} machines & Rédiger la Fiche
-        </button>
-    </div>`;
+    htmlContent += `<div class="mt-auto pt-4 border-t border-slate-200"><button id="btnValiderGroupe" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-xl shadow-md transition-transform transform hover:-translate-y-1" onclick="validerGroupeGlobal('${groupKey}')"><i class="fa-solid fa-file-signature mr-2"></i> Clôturer les ${group.machines.length} machines & Rédiger la Fiche</button></div>`;
 
     listContainer.innerHTML = htmlContent;
     document.getElementById('groupModal').classList.remove('hidden'); document.getElementById('groupModal').classList.add('flex');
 }
 window.fermerModalGroupe = function() { document.getElementById('groupModal').classList.add('hidden'); document.getElementById('groupModal').classList.remove('flex'); }
 
-// LA RÉVOLUTION MULTI-MACHINES
-window.validerGroupeEtFiche = async function(groupKey) {
+// LA RÉVOLUTION MULTI-MACHINES (DEPUIS LE DASHBOARD)
+window.validerGroupeGlobal = async function(groupKey) {
     const group = groupedInterventionsGlobal[groupKey]; if (!group) return;
     const btn = document.getElementById('btnValiderGroupe'); const orig = btn.innerHTML;
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Consolidation...'; btn.disabled = true;
 
     try {
         let allParts = {}; let machinesList = []; let allTechs = new Set();
-
         for (const m of group.machines) {
-            machinesList.push(m.machine);
-            if (m.technicien) m.technicien.split(', ').forEach(t => allTechs.add(t));
-            
+            machinesList.push(m.machine); if (m.technicien) m.technicien.split(', ').forEach(t => allTechs.add(t));
             await updateDoc(doc(db, "interventions", m.id), { statut: "Terminé" });
-
             const freq = m.frequence || "Ponctuel";
             if (freq === "Hypertherm") {
                 const htMachine = hyperthermDB.find(h => h.client === m.client && h.machine === m.machine);
@@ -424,7 +513,6 @@ window.validerGroupeEtFiche = async function(groupKey) {
                     const cycleInfo = getNextHyperthermCycle(htMachine.dateInstallation, htMachine.shifts || 1, htMachine.modele);
                     await addDoc(collection(db, "interventions"), { client: m.client, machine: m.machine, date: cycleInfo.dateObj.toISOString().split('T')[0], type: "Préventif", technicien: m.technicien, statut: "Planifié", frequence: "Hypertherm", timestamp: serverTimestamp() });
                     cycleInfo.parts.forEach(p => { if (!allParts[p.ref]) allParts[p.ref] = { nom: p.nom, qte: 0 }; allParts[p.ref].qte += 1; });
-                    
                     let newKit = cycleInfo.parts.map(p => ({ ref: p.ref, nom: p.nom, qte: 1 }));
                     const theKit = kitsDB[m.client + "_" + m.machine];
                     if (theKit) { await updateDoc(doc(db, "kits", theKit.id), { pieces: newKit }); } else { await addDoc(collection(db, "kits"), { client: htMachine.client, machine: htMachine.machine, pieces: newKit }); }
@@ -436,32 +524,20 @@ window.validerGroupeEtFiche = async function(groupKey) {
                     await addDoc(collection(db, "interventions"), { client: m.client, machine: m.machine, date: dateObj.toISOString().split('T')[0], type: m.type, technicien: m.technicien, statut: "Planifié", frequence: freq, timestamp: serverTimestamp() });
                 }
                 const theKit = kitsDB[m.client + "_" + m.machine];
-                if (theKit && m.type === "Préventif") {
-                    theKit.pieces.forEach(p => { if (!allParts[p.ref]) allParts[p.ref] = { nom: p.nom, qte: 0 }; allParts[p.ref].qte += Number(p.qte); });
-                }
+                if (theKit && m.type === "Préventif") { theKit.pieces.forEach(p => { if (!allParts[p.ref]) allParts[p.ref] = { nom: p.nom, qte: 0 }; allParts[p.ref].qte += Number(p.qte); }); }
             }
         }
 
-        document.getElementById('input_client').value = group.client;
-        document.getElementById('input_machine').value = `${group.machines.length} machine(s) (Voir détail)`;
-        document.getElementById('input_date').value = new Date().toISOString().split('T')[0];
+        document.getElementById('input_client').value = group.client; document.getElementById('input_machine').value = `${group.machines.length} machine(s) (Voir détail)`; document.getElementById('input_date').value = new Date().toISOString().split('T')[0];
 
         if (group.type === "Préventif") {
             document.getElementById('input_forfait_ref').value = "PREV"; document.getElementById('input_forfait_nom').value = "SAV-Préventif"; document.getElementById('input_forfait_diag').value = "Maintenance Préventive Parc";
-            let texteTravaux = `Dans le cadre du contrat de maintenance préventive A2CIM, une intervention a été réalisée sur un parc de ${group.machines.length} équipement(s).\n\n`;
-            texteTravaux += `Machines concernées :\n- ${machinesList.join('\n- ')}\n\n`;
-            texteTravaux += `📌 CONTRÔLES EFFECTUÉS SUR CHAQUE MACHINE :\n- Nettoyage et dépoussiérage intégral.\n- Vérification des tensions, des sécurités et connectiques.\n- Contrôle des pressions et purge des circuits.\n`;
-            
+            let texteTravaux = `Dans le cadre du contrat de maintenance préventive A2CIM, une intervention a été réalisée sur un parc de ${group.machines.length} équipement(s).\n\nMachines concernées :\n- ${machinesList.join('\n- ')}\n\n📌 CONTRÔLES EFFECTUÉS SUR CHAQUE MACHINE :\n- Nettoyage et dépoussiérage intégral.\n- Vérification des tensions, des sécurités et connectiques.\n- Contrôle des pressions et purge des circuits.\n`;
             const partsKeys = Object.keys(allParts);
-            if (partsKeys.length > 0) {
-                texteTravaux += `\n⚙️ REMPLACEMENT GLOBAL DES CONSOMMABLES (Total du parc) :\n`;
-                partsKeys.forEach(ref => { texteTravaux += `✓ ${allParts[ref].qte}x ${allParts[ref].nom} (Réf: ${ref})\n`; });
-            }
-            texteTravaux += `\n✅ Résultat : Équipements remis en production.`;
-            document.getElementById('input_travaux').value = texteTravaux;
+            if (partsKeys.length > 0) { texteTravaux += `\n⚙️ REMPLACEMENT GLOBAL DES CONSOMMABLES (Total du parc) :\n`; partsKeys.forEach(ref => { texteTravaux += `✓ ${allParts[ref].qte}x ${allParts[ref].nom} (Réf: ${ref})\n`; }); }
+            texteTravaux += `\n✅ Résultat : Équipements remis en production.`; document.getElementById('input_travaux').value = texteTravaux;
         } else {
-            document.getElementById('input_forfait_ref').value = "DEPAN"; document.getElementById('input_forfait_nom').value = "SAV-Depannage"; document.getElementById('input_forfait_diag').value = "Intervention Curative Multi-machines"; 
-            document.getElementById('input_travaux').value = `Machines concernées : ${machinesList.join(', ')}\n\nDétail des travaux : `;
+            document.getElementById('input_forfait_ref').value = "DEPAN"; document.getElementById('input_forfait_nom').value = "SAV-Depannage"; document.getElementById('input_forfait_diag').value = "Intervention Curative Multi-machines"; document.getElementById('input_travaux').value = `Machines concernées : ${machinesList.join(', ')}\n\nDétail des travaux : `;
         }
 
         const techListContainer = document.getElementById('fiche-tech-list'); techListContainer.innerHTML = '';
