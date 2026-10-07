@@ -1,5 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot, query, orderBy, serverTimestamp, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+// NOUVEAU : Import de "increment" pour décrémenter le stock Firebase !
+import { getFirestore, collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot, query, orderBy, serverTimestamp, arrayUnion, arrayRemove, increment } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyAvKqfjnjJ4a64QpK2Idt2ms32E0zALFJ4",
@@ -20,44 +21,185 @@ let fullCalendarInstance = null;
 let currentClientFilter = "ALL";
 let currentTypeFilter = "ALL"; 
 
-// --- GESTION DU CODE PIN ---
-const CORRECT_PIN = "A2CIM2026";
-if (document.getElementById('pinForm')) {
-    document.getElementById('pinForm').addEventListener('submit', (e) => {
-        e.preventDefault();
-        if (document.getElementById('pinInput').value.trim() === CORRECT_PIN) {
-            const lock = document.getElementById('lockScreen');
-            lock.classList.add('opacity-0'); setTimeout(() => lock.remove(), 300);
-        } else {
-            document.getElementById('pinError').classList.remove('hidden');
+// NOUVEAU : Variables globales pour le Stock et les Kits
+let stockDB = []; // Liste des pièces en stock
+let kitsDB = {};  // Kits associés aux machines
+let tempKitPieces = []; // Pour le modal de création de kit
+
+// ==========================================
+// 1. MOTEUR DU STOCK CENTRAL (PDR)
+// ==========================================
+const qStock = query(collection(db, "stock"), orderBy("nom", "asc"));
+onSnapshot(qStock, (snapshot) => {
+    stockDB = [];
+    const stockContainer = document.getElementById('stock-container');
+    const selectPieceKit = document.getElementById('selectPieceKit');
+    
+    if(stockContainer) stockContainer.innerHTML = '';
+    if(selectPieceKit) selectPieceKit.innerHTML = '<option value="" disabled selected>Choisir une pièce...</option>';
+    
+    if (snapshot.empty && stockContainer) {
+        stockContainer.innerHTML = '<p class="text-slate-500 col-span-full">Aucune pièce en stock. Ajoutez-en une au-dessus.</p>';
+    }
+
+    snapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        data.id = docSnap.id;
+        stockDB.push(data);
+        
+        // Remplir le select du modal Kit
+        if (selectPieceKit) {
+            selectPieceKit.innerHTML += `<option value="${data.id}">${data.ref} - ${data.nom} (Stock: ${data.qte})</option>`;
+        }
+
+        // Affichage des cartes de stock
+        if (stockContainer) {
+            const isAlert = data.qte <= data.alerte;
+            const colorClass = isAlert ? 'text-red-600 bg-red-50 border-red-200' : 'text-slate-700 bg-white border-slate-100';
+            const iconAlert = isAlert ? '<i class="fa-solid fa-triangle-exclamation text-red-500 absolute top-4 right-4"></i>' : '';
+            
+            stockContainer.innerHTML += `
+            <div class="p-5 rounded-2xl shadow-sm border ${colorClass} flex flex-col relative transition-all">
+                ${iconAlert}
+                <div class="text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">${data.ref}</div>
+                <h3 class="font-bold text-base mb-4 pr-6 leading-tight">${data.nom}</h3>
+                
+                <div class="mt-auto">
+                    <div class="flex justify-between items-end mb-2">
+                        <span class="text-3xl font-black ${isAlert ? 'text-red-600' : 'text-brand-600'}">${data.qte}</span>
+                        <span class="text-[10px] text-slate-400 uppercase font-bold">Seuil: ${data.alerte}</span>
+                    </div>
+                    <div class="w-full bg-slate-100 rounded-full h-1.5 mb-4 overflow-hidden">
+                        <div class="h-1.5 rounded-full ${isAlert ? 'bg-red-500' : 'bg-brand-500'}" style="width: ${Math.min((data.qte / (data.alerte * 3)) * 100, 100)}%"></div>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button onclick="ajusterStock('${data.id}', 1)" class="flex-1 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-sm font-bold"><i class="fa-solid fa-plus"></i></button>
+                        <button onclick="ajusterStock('${data.id}', -1)" class="flex-1 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-sm font-bold"><i class="fa-solid fa-minus"></i></button>
+                        <button onclick="supprimerStock('${data.id}')" class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-lg"><i class="fa-solid fa-trash-can"></i></button>
+                    </div>
+                </div>
+            </div>`;
         }
     });
+});
+
+// Ajouter une nouvelle pièce au stock
+if (document.getElementById('formAddStock')) {
+    document.getElementById('formAddStock').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const ref = document.getElementById('newStockRef').value.trim();
+        const nom = document.getElementById('newStockNom').value.trim();
+        const qte = parseInt(document.getElementById('newStockQte').value);
+        const alerte = parseInt(document.getElementById('newStockAlerte').value);
+        
+        await addDoc(collection(db, "stock"), { ref: ref, nom: nom, qte: qte, alerte: alerte });
+        e.target.reset();
+    });
+}
+window.ajusterStock = async function(id, val) { await updateDoc(doc(db, "stock", id), { qte: increment(val) }); };
+window.supprimerStock = async function(id) { if(confirm("Supprimer cette pièce du stock central ?")) await deleteDoc(doc(db, "stock", id)); };
+
+
+// ==========================================
+// 2. MOTEUR DES KITS (RECETTES PAR MACHINE)
+// ==========================================
+const qKits = query(collection(db, "kits"));
+onSnapshot(qKits, (snapshot) => {
+    kitsDB = {};
+    snapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        // Clé unique de recherche: Client_Machine
+        kitsDB[data.client + "_" + data.machine] = { id: docSnap.id, pieces: data.pieces };
+    });
+});
+
+// Fonctions pour le Modal Kit
+window.ouvrirModalKit = function(client, machine) {
+    document.getElementById('kitModalMachineName').textContent = `${client} | ${machine}`;
+    document.getElementById('currentKitClient').value = client;
+    document.getElementById('currentKitMachine').value = machine;
+    
+    // Charger le kit existant s'il y en a un
+    const kitExistant = kitsDB[client + "_" + machine];
+    tempKitPieces = kitExistant ? [...kitExistant.pieces] : [];
+    
+    afficherPiecesKitTemp();
+    document.getElementById('kitModal').classList.remove('hidden');
+    document.getElementById('kitModal').classList.add('flex');
+}
+window.fermerKitModal = function() {
+    document.getElementById('kitModal').classList.add('hidden');
+    document.getElementById('kitModal').classList.remove('flex');
+}
+window.ajouterPieceAuKitTemp = function() {
+    const select = document.getElementById('selectPieceKit');
+    const idPiece = select.value;
+    const qte = parseInt(document.getElementById('qtePieceKit').value);
+    
+    if (!idPiece || qte < 1) return;
+    
+    // Trouver le nom de la pièce via le stockDB
+    const pieceDb = stockDB.find(p => p.id === idPiece);
+    if (!pieceDb) return;
+    
+    // Vérifier si elle est déjà dans le kit (on l'écrase)
+    const existingIndex = tempKitPieces.findIndex(p => p.idPiece === idPiece);
+    if (existingIndex >= 0) { tempKitPieces[existingIndex].qte = qte; } 
+    else { tempKitPieces.push({ idPiece: idPiece, nom: pieceDb.nom, ref: pieceDb.ref, qte: qte }); }
+    
+    afficherPiecesKitTemp();
+}
+window.retirerPieceDuKitTemp = function(idPiece) {
+    tempKitPieces = tempKitPieces.filter(p => p.idPiece !== idPiece);
+    afficherPiecesKitTemp();
+}
+function afficherPiecesKitTemp() {
+    const ul = document.getElementById('listePiecesKitTemp');
+    ul.innerHTML = '';
+    if (tempKitPieces.length === 0) {
+        ul.innerHTML = '<li class="text-sm text-slate-400 italic text-center py-2">Aucune pièce associée.</li>';
+        return;
+    }
+    tempKitPieces.forEach(p => {
+        ul.innerHTML += `
+        <li class="flex justify-between items-center bg-slate-50 border border-slate-100 p-2 rounded text-sm">
+            <span><strong>${p.qte}x</strong> ${p.ref} - ${p.nom}</span>
+            <button onclick="retirerPieceDuKitTemp('${p.idPiece}')" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-xmark"></i></button>
+        </li>`;
+    });
+}
+window.sauvegarderKitFinal = async function() {
+    const client = document.getElementById('currentKitClient').value;
+    const machine = document.getElementById('currentKitMachine').value;
+    const existingKit = kitsDB[client + "_" + machine];
+    
+    if (existingKit) {
+        // Mettre à jour
+        await updateDoc(doc(db, "kits", existingKit.id), { pieces: tempKitPieces });
+    } else {
+        // Créer
+        await addDoc(collection(db, "kits"), { client: client, machine: machine, pieces: tempKitPieces });
+    }
+    alert("Le kit préventif a été enregistré pour cette machine !");
+    fermerKitModal();
 }
 
+
 // ==========================================
-// MOTEUR PARC CLIENTS (SYNCHRO FIREBASE)
+// MOTEUR PARC CLIENTS (AJOUT DU BOUTON KIT)
 // ==========================================
 const qClients = query(collection(db, "clients"), orderBy("nom", "asc"));
-
 onSnapshot(qClients, (snapshot) => {
     const parcContainer = document.getElementById('parc-container');
     const formClientSelect = document.getElementById('formClient');
     const calendarFilter = document.getElementById('calendarClientFilter');
     
     if (parcContainer) parcContainer.innerHTML = '';
-    
     const currentClientSelection = formClientSelect ? formClientSelect.value : "";
-    const currentFilterSelection = calendarFilter ? calendarFilter.value : "ALL";
-
+    
     if (formClientSelect) formClientSelect.innerHTML = '<option value="" disabled selected>Sélectionner...</option>';
     if (calendarFilter) calendarFilter.innerHTML = '<option value="ALL">Tous les clients</option>';
-    
     parcClientsDB = {};
-
-    if (snapshot.empty) {
-        if (parcContainer) parcContainer.innerHTML = '<p class="text-slate-500 col-span-full">Aucun client. Ajoutez-en un au-dessus.</p>';
-        return;
-    }
 
     snapshot.forEach(docSnap => {
         const data = docSnap.data();
@@ -65,7 +207,6 @@ onSnapshot(qClients, (snapshot) => {
         const machines = data.machines || [];
         
         parcClientsDB[data.nom] = { id: docId, machines: machines };
-
         if (formClientSelect) formClientSelect.innerHTML += `<option value="${data.nom}">${data.nom}</option>`;
         if (calendarFilter) calendarFilter.innerHTML += `<option value="${data.nom}">${data.nom}</option>`;
 
@@ -74,10 +215,20 @@ onSnapshot(qClients, (snapshot) => {
             machinesListHTML = '<p class="text-xs text-slate-400 italic mb-2">Aucune machine.</p>';
         } else {
             machines.forEach(m => {
+                // VERIFICATION SI UN KIT EXISTE POUR METTRE EN BLEU OU GRIS L'ICONE
+                const hasKit = kitsDB[data.nom + "_" + m] && kitsDB[data.nom + "_" + m].pieces.length > 0;
+                const iconColor = hasKit ? "text-brand-500" : "text-slate-300";
+                
                 machinesListHTML += `
                 <div class="flex items-center justify-between bg-slate-50 px-3 py-2 rounded-lg mb-2 border border-slate-100">
-                    <span class="text-sm text-slate-700 font-medium"><i class="fa-solid fa-microchip text-slate-400 mr-2"></i>${m}</span>
-                    <button onclick="supprimerMachineParc('${docId}', '${m}')" class="text-slate-300 hover:text-red-500"><i class="fa-solid fa-xmark"></i></button>
+                    <span class="text-sm text-slate-700 font-medium truncate flex-1"><i class="fa-solid fa-microchip text-slate-400 mr-2"></i>${m}</span>
+                    <div class="flex items-center space-x-2 shrink-0">
+                        <!-- NOUVEAU BOUTON KIT PDR -->
+                        <button onclick="ouvrirModalKit('${data.nom}', '${m}')" class="px-2 py-1 bg-white border border-slate-200 rounded hover:bg-slate-100 transition-colors" title="Définir Pièces">
+                            <i class="fa-solid fa-boxes-stacked ${iconColor}"></i>
+                        </button>
+                        <button onclick="supprimerMachineParc('${docId}', '${m}')" class="text-slate-300 hover:text-red-500 px-1"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
                 </div>`;
             });
         }
@@ -90,7 +241,6 @@ onSnapshot(qClients, (snapshot) => {
                     <h3 class="text-lg font-bold text-brand-900"><i class="fa-solid fa-building mr-2 text-brand-500"></i>${data.nom}</h3>
                 </div>
                 <div class="p-5 flex-1 flex flex-col">
-                    <!-- SCROLLBAR POUR LA LISTE DES MACHINES -->
                     <div class="mb-4 max-h-[200px] overflow-y-auto custom-scroll pr-2">${machinesListHTML}</div>
                     <form onsubmit="ajouterMachineParc(event, '${docId}')" class="flex gap-2 mt-auto">
                         <input type="text" id="machineInput_${docId}" placeholder="Nom machine..." required class="flex-1 px-3 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-brand-500">
@@ -102,12 +252,10 @@ onSnapshot(qClients, (snapshot) => {
     });
 
     if (formClientSelect && parcClientsDB[currentClientSelection]) formClientSelect.value = currentClientSelection;
-    if (calendarFilter) calendarFilter.value = currentFilterSelection;
 });
 
 const formClientSelect = document.getElementById('formClient');
 const formMachineSelect = document.getElementById('formMachine');
-
 if (formClientSelect && formMachineSelect) {
     formClientSelect.addEventListener('change', (e) => {
         const nomClient = e.target.value;
@@ -116,41 +264,30 @@ if (formClientSelect && formMachineSelect) {
             if (parcClientsDB[nomClient].machines.length > 0) {
                 formMachineSelect.innerHTML += `<option value="TOUTES_LES_MACHINES" class="font-bold text-brand-600">🌟 Toutes les machines (${parcClientsDB[nomClient].machines.length})</option>`;
             }
-            parcClientsDB[nomClient].machines.forEach(m => {
-                formMachineSelect.innerHTML += `<option value="${m}">${m}</option>`;
-            });
+            parcClientsDB[nomClient].machines.forEach(m => { formMachineSelect.innerHTML += `<option value="${m}">${m}</option>`; });
         }
     });
 }
-
-// Fonctions CRUD du Parc
 window.ajouterMachineParc = async function(e, docId) {
-    e.preventDefault();
-    const input = document.getElementById(`machineInput_${docId}`);
-    const nomMachine = input.value.trim();
-    if (!nomMachine) return;
-    await updateDoc(doc(db, "clients", docId), { machines: arrayUnion(nomMachine) });
+    e.preventDefault(); const input = document.getElementById(`machineInput_${docId}`);
+    if (!input.value.trim()) return;
+    await updateDoc(doc(db, "clients", docId), { machines: arrayUnion(input.value.trim()) });
     input.value = '';
 };
-window.supprimerMachineParc = async function(docId, nomMachine) {
-    if (confirm(`Supprimer la machine "${nomMachine}" ?`)) await updateDoc(doc(db, "clients", docId), { machines: arrayRemove(nomMachine) });
-};
-window.supprimerClientParc = async function(docId) {
-    if (confirm(`Attention : supprimer ce client et toute sa liste de machines ?`)) await deleteDoc(doc(db, "clients", docId));
-};
+window.supprimerMachineParc = async function(docId, nomMachine) { if (confirm(`Supprimer la machine "${nomMachine}" ?`)) await updateDoc(doc(db, "clients", docId), { machines: arrayRemove(nomMachine) }); };
+window.supprimerClientParc = async function(docId) { if (confirm(`Attention : supprimer ce client ?`)) await deleteDoc(doc(db, "clients", docId)); };
 if (document.getElementById('formAddClient')) {
     document.getElementById('formAddClient').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const input = document.getElementById('newClientName');
-        const nom = input.value.trim();
-        if (!nom) return;
-        await addDoc(collection(db, "clients"), { nom: nom, machines: [] });
+        e.preventDefault(); const input = document.getElementById('newClientName');
+        if (!input.value.trim()) return;
+        await addDoc(collection(db, "clients"), { nom: input.value.trim(), machines: [] });
         input.value = '';
     });
 }
 
+
 // ==========================================
-// CONFIG STATUTS
+// CONFIG STATUTS & CALENDRIER
 // ==========================================
 const statusConfig = {
     "En retard": { bg: "#fef2f2", border: "#ef4444", text: "#b91c1c", color: "#ef4444" },
@@ -159,122 +296,154 @@ const statusConfig = {
     "Terminé": { bg: "#f0fdf4", border: "#22c55e", text: "#15803d", color: "#22c55e" }
 };
 
-// ==========================================
-// CALENDRIER GLOBAL
-// ==========================================
 function initCalendar() {
     const calendarEl = document.getElementById('calendar');
     if (!calendarEl) return;
     if (fullCalendarInstance) fullCalendarInstance.destroy();
-
     fullCalendarInstance = new FullCalendar.Calendar(calendarEl, {
-        initialView: window.innerWidth < 768 ? 'listMonth' : 'dayGridMonth',
-        locale: 'fr',
+        initialView: window.innerWidth < 768 ? 'listMonth' : 'dayGridMonth', locale: 'fr',
         headerToolbar: { left: 'prev,next today', center: 'title', right: window.innerWidth < 768 ? '' : 'dayGridMonth,timeGridWeek,listMonth' },
         buttonText: { today: "Aujourd'hui", month: 'Mois', week: 'Semaine', list: 'Liste' },
-        height: '100%',
-        events: [],
+        height: '100%', events: [],
         eventClick: function(info) { ouvrirActionModal(info.event); }
     });
     fullCalendarInstance.render();
 }
-
 function updateCalendarEvents() {
     if (!fullCalendarInstance) return;
     fullCalendarInstance.removeAllEvents();
-    
     const todayStr = new Date().toISOString().split('T')[0];
-
     allInterventions.forEach(data => {
         if (currentClientFilter !== "ALL" && data.client !== currentClientFilter) return;
         if (currentTypeFilter !== "ALL" && data.type !== currentTypeFilter) return;
-        
         let eventColor = statusConfig[data.statut]?.color || "#3b82f6";
-        
         if (data.statut !== "Terminé" && data.date < todayStr) eventColor = "#ef4444"; 
         else if (data.statut === "Planifié" && data.type === "Curatif") eventColor = "#ef4444"; 
-        
-        let eventTitle = data.type === "Curatif" ? `🚨 ${data.machine}` : `🔧 ${data.machine}`;
-
         fullCalendarInstance.addEvent({
-            id: data.id, 
-            title: eventTitle, 
-            start: data.date,
-            backgroundColor: eventColor, 
-            borderColor: eventColor,
+            id: data.id, title: data.type === "Curatif" ? `🚨 ${data.machine}` : `🔧 ${data.machine}`, start: data.date,
+            backgroundColor: eventColor, borderColor: eventColor,
             extendedProps: { client: data.client, statut: data.statut, frequence: data.frequence || 'Ponctuel', type: data.type, machine: data.machine, technicien: data.technicien }
         });
     });
 }
-
 const clientFilterSelect = document.getElementById('calendarClientFilter');
 if (clientFilterSelect) clientFilterSelect.addEventListener('change', (e) => { currentClientFilter = e.target.value; updateCalendarEvents(); });
 const typeFilterSelect = document.getElementById('calendarTypeFilter');
 if (typeFilterSelect) typeFilterSelect.addEventListener('change', (e) => { currentTypeFilter = e.target.value; updateCalendarEvents(); });
-
 document.addEventListener('DOMContentLoaded', initCalendar);
 
-// --- MODAL ACTION (CALENDRIER) ---
+
+// ==========================================
+// MODAL D'ACTION ET DÉCREMENTATION DE STOCK
+// ==========================================
 const actionModal = document.getElementById('eventActionModal');
-function ouvrirActionModal(event) {
-    const props = event.extendedProps;
-    document.getElementById('actionModalTitle').textContent = event.title;
+
+window.ouvrirActionModal = function(eventOrId) {
+    // Permet d'ouvrir depuis le calendrier (objet FullCalendar) OU depuis la liste du dashboard (ID en string)
+    let id, props, title;
+    if (typeof eventOrId === 'string') {
+        const intData = allInterventions.find(i => i.id === eventOrId);
+        if(!intData) return;
+        id = intData.id;
+        props = { client: intData.client, machine: intData.machine, statut: intData.statut, frequence: intData.frequence || 'Ponctuel', type: intData.type };
+        title = intData.machine;
+    } else {
+        id = eventOrId.id; props = eventOrId.extendedProps; title = eventOrId.title;
+    }
+
+    document.getElementById('actionModalTitle').textContent = title;
     document.getElementById('actionModalSub').textContent = `${props.client} | ${props.frequence}`;
-    document.getElementById('actionEventId').value = event.id;
+    document.getElementById('actionEventId').value = id;
+    document.getElementById('actionClientMachineKey').value = props.client + "_" + props.machine;
+    document.getElementById('actionEventType').value = props.type;
+    
     document.getElementById('btnSetEnCours').style.display = (props.statut === "Planifié") ? "block" : "none";
     document.getElementById('btnSetTermine').style.display = (props.statut !== "Terminé") ? "block" : "none";
+    
+    // AFFICHAGE DU KIT PDR AUTOMATIQUE
+    const encartPDR = document.getElementById('actionModalPDR');
+    const ulPDR = document.getElementById('actionModalPDRList');
+    ulPDR.innerHTML = '';
+    
+    const theKit = kitsDB[props.client + "_" + props.machine];
+    if (props.type === "Préventif" && theKit && theKit.pieces.length > 0) {
+        theKit.pieces.forEach(p => {
+            ulPDR.innerHTML += `<li><span class="font-black bg-white text-brand-700 px-2 py-0.5 rounded mr-2 border border-brand-100">${p.qte}x</span> ${p.ref} - ${p.nom}</li>`;
+        });
+        encartPDR.classList.remove('hidden');
+    } else {
+        encartPDR.classList.add('hidden');
+    }
+
     actionModal.classList.remove('hidden'); actionModal.classList.add('flex');
 }
-function fermerActionModal() { actionModal.classList.add('hidden'); actionModal.classList.remove('flex'); }
 
+function fermerActionModal() { actionModal.classList.add('hidden'); actionModal.classList.remove('flex'); }
 document.getElementById('btnCloseActionModal').addEventListener('click', fermerActionModal);
 document.getElementById('btnDeleteEvent').addEventListener('click', async () => {
-    const id = document.getElementById('actionEventId').value;
-    if (confirm("Supprimer l'intervention ?")) { await deleteDoc(doc(db, "interventions", id)); fermerActionModal(); }
+    if (confirm("Supprimer l'intervention ?")) { await deleteDoc(doc(db, "interventions", document.getElementById('actionEventId').value)); fermerActionModal(); }
 });
 document.getElementById('btnSetEnCours').addEventListener('click', async () => {
-    const id = document.getElementById('actionEventId').value;
-    await updateDoc(doc(db, "interventions", id), { statut: "En cours" }); fermerActionModal();
+    await updateDoc(doc(db, "interventions", document.getElementById('actionEventId').value), { statut: "En cours" }); fermerActionModal();
 });
 
-function calculerProchaineDate(dateInitiale, frequence) {
-    const dateObj = new Date(dateInitiale);
-    if (frequence === "Mensuel") dateObj.setMonth(dateObj.getMonth() + 1);
-    else if (frequence === "Trimestriel") dateObj.setMonth(dateObj.getMonth() + 3);
-    else if (frequence === "Semestriel") dateObj.setMonth(dateObj.getMonth() + 6);
-    else if (frequence === "Annuel") dateObj.setFullYear(dateObj.getFullYear() + 1);
-    return dateObj.toISOString().split('T')[0];
-}
-
 document.getElementById('btnSetTermine').addEventListener('click', async () => {
+    const btnTermine = document.getElementById('btnSetTermine');
+    const originalContent = btnTermine.innerHTML;
+    btnTermine.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Traitement...';
+    btnTermine.disabled = true;
+
     const id = document.getElementById('actionEventId').value;
     const interventionData = allInterventions.find(i => i.id === id);
-    if (!interventionData) return fermerActionModal();
+    if (!interventionData) { fermerActionModal(); return; }
 
-    await updateDoc(doc(db, "interventions", id), { statut: "Terminé" });
+    try {
+        // 1. DÉCRÉMENTATION AUTOMATIQUE DU STOCK (SI PRÉVENTIF ET KIT EXISTANT)
+        let alertMessage = "";
+        const theKit = kitsDB[interventionData.client + "_" + interventionData.machine];
+        if (interventionData.type === "Préventif" && theKit && theKit.pieces.length > 0) {
+            for (const p of theKit.pieces) {
+                // Fonction increment avec une valeur négative soustrait la quantité
+                await updateDoc(doc(db, "stock", p.idPiece), { qte: increment(-p.qte) });
+            }
+            alertMessage = "\n\n📦 Les pièces ont été déduites du stock central de l'atelier !";
+        }
 
-    const freq = interventionData.frequence || "Ponctuel";
-    if (freq !== "Ponctuel") {
-        const nouvelleDateStr = calculerProchaineDate(interventionData.date, freq);
-        
-        await addDoc(collection(db, "interventions"), {
-            client: interventionData.client, 
-            machine: interventionData.machine,
-            date: nouvelleDateStr, 
-            type: interventionData.type,
-            technicien: interventionData.technicien, 
-            statut: "Planifié", 
-            frequence: freq,
-            timestamp: serverTimestamp()
-        });
-        alert(`La prochaine maintenance (${freq}) a été programmée pour le ${nouvelleDateStr}.`);
+        // 2. MARQUER L'INTERVENTION COMME TERMINÉE
+        await updateDoc(doc(db, "interventions", id), { statut: "Terminé" });
+
+        // 3. GÉNÉRER LA PROCHAINE INTERVENTION (RÉCURRENCE)
+        const freq = interventionData.frequence || "Ponctuel";
+        if (freq !== "Ponctuel") {
+            const dateObj = new Date(interventionData.date);
+            if (freq === "Mensuel") dateObj.setMonth(dateObj.getMonth() + 1);
+            else if (freq === "Trimestriel") dateObj.setMonth(dateObj.getMonth() + 3);
+            else if (freq === "Semestriel") dateObj.setMonth(dateObj.getMonth() + 6);
+            else if (freq === "Annuel") dateObj.setFullYear(dateObj.getFullYear() + 1);
+            
+            const nouvelleDateStr = dateObj.toISOString().split('T')[0];
+            await addDoc(collection(db, "interventions"), {
+                client: interventionData.client, machine: interventionData.machine, date: nouvelleDateStr, 
+                type: interventionData.type, technicien: interventionData.technicien, statut: "Planifié", 
+                frequence: freq, timestamp: serverTimestamp()
+            });
+            alert(`Intervention clôturée. Prochaine maintenance prévue le ${nouvelleDateStr}.` + alertMessage);
+        } else {
+            alert("Intervention clôturée avec succès." + alertMessage);
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Une erreur s'est produite lors de la validation.");
+    } finally {
+        btnTermine.innerHTML = originalContent;
+        btnTermine.disabled = false;
+        fermerActionModal();
     }
-    fermerActionModal();
 });
 
 
 // ==========================================
-// SYNCHRONISATION & TABLEAU DE BORD INTELLIGENT
+// SYNCHRO & TABLEAU DE BORD INTELLIGENT
 // ==========================================
 const q = query(collection(db, "interventions"), orderBy("date", "asc"));
 onSnapshot(q, (snapshot) => {
@@ -307,20 +476,18 @@ onSnapshot(q, (snapshot) => {
         let currentConfig = statusConfig[data.statut] || statusConfig["Planifié"];
         if (isRetard && data.statut === "Planifié") currentConfig = statusConfig["En retard"];
 
-        // AFFICHAGE DES AVATARS MULTIPLES
         const listTechs = data.technicien ? data.technicien.split(', ') : ['?'];
         let avatarsHTML = '';
-        listTechs.forEach(t => {
-            avatarsHTML += `<div class="w-6 h-6 rounded-full bg-slate-200 border border-white flex items-center justify-center text-[10px] font-bold text-slate-600 -ml-1.5 first:ml-0 shadow-sm" title="${t}">${t.charAt(0).toUpperCase()}</div>`;
-        });
+        listTechs.forEach(t => { avatarsHTML += `<div class="w-6 h-6 rounded-full bg-slate-200 border border-white flex items-center justify-center text-[10px] font-bold text-slate-600 -ml-1.5 first:ml-0 shadow-sm" title="${t}">${t.charAt(0).toUpperCase()}</div>`; });
 
         const badgeFrequence = data.frequence && data.frequence !== "Ponctuel" ? `<span class="ml-2 text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded border border-slate-200"><i class="fa-solid fa-rotate mr-1"></i>${data.frequence}</span>` : '';
         const badgeCuratif = data.type === "Curatif" ? `<span class="ml-2 text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded border border-red-200 font-bold">URGENCE</span>` : '';
         const libelleStatut = (isRetard && data.statut === "Planifié") ? "En retard" : data.statut;
         
+        // MODIFICATION : Au lieu de juste supprimer, on peut cliquer sur la carte pour ouvrir le Modal d'Action
         const cardHTML = `
             <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex items-center justify-between hover:shadow-md transition-shadow">
-                <div class="flex items-center flex-1">
+                <div class="flex items-center flex-1 cursor-pointer" onclick="ouvrirActionModal('${data.id}')">
                     <div class="w-2 self-stretch border-l-4" style="background-color: ${currentConfig.bg}; border-color: ${currentConfig.border};"></div>
                     <div class="p-4 flex-1 flex flex-col sm:flex-row sm:items-center justify-between">
                         <div class="mb-3 sm:mb-0">
@@ -334,26 +501,19 @@ onSnapshot(q, (snapshot) => {
                             <p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-wrench mr-1"></i> ${data.type}</p>
                         </div>
                         <div class="flex items-center space-x-4">
-                            <!-- Affichage en mode pastilles superposées -->
-                            <div class="flex items-center">
-                                ${avatarsHTML}
-                            </div>
+                            <div class="flex items-center">${avatarsHTML}</div>
                             <div class="px-2.5 py-1 rounded-md flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider border border-opacity-20" style="background-color: ${currentConfig.bg}; color: ${currentConfig.text}; border-color: ${currentConfig.border};">
                                 <span>${libelleStatut}</span>
                             </div>
                         </div>
                     </div>
                 </div>
-                <button onclick="supprimerInterventionList('${data.id}')" class="p-4 text-slate-300 hover:text-red-500 transition-colors"><i class="fa-solid fa-trash-can text-base"></i></button>
+                <button onclick="supprimerInterventionList('${data.id}')" class="p-4 border-l border-slate-100 text-slate-300 hover:bg-red-50 hover:text-red-500 transition-colors"><i class="fa-solid fa-trash-can text-base"></i></button>
             </div>
         `;
 
-        if (data.type === "Curatif" || isRetard || data.statut === "En retard") {
-            if (urgentContainer) urgentContainer.innerHTML += cardHTML;
-        } else {
-            if (upcomingContainer) upcomingContainer.innerHTML += cardHTML;
-        }
-        
+        if (data.type === "Curatif" || isRetard || data.statut === "En retard") { if (urgentContainer) urgentContainer.innerHTML += cardHTML; } 
+        else { if (upcomingContainer) upcomingContainer.innerHTML += cardHTML; }
         if (data.type === "Curatif" && curatifContainer) curatifContainer.innerHTML += cardHTML;
     });
 
@@ -368,30 +528,10 @@ onSnapshot(q, (snapshot) => {
     updateCalendarEvents();
 });
 
-// --- AJOUT INTERVENTION (AVEC GESTION MULTI-TECH & MULTI-MACHINES) ---
+
+// --- AJOUT INTERVENTION ---
 const modal = document.getElementById('addInterventionModal');
-const formType = document.getElementById('formType');
-const freqContainer = document.getElementById('frequenceContainer');
-
-if(formType && freqContainer) {
-    formType.addEventListener('change', (e) => {
-        if(e.target.value === 'Curatif') {
-            freqContainer.style.display = 'none'; document.getElementById('formFrequence').value = 'Ponctuel';
-        } else { freqContainer.style.display = 'block'; }
-    });
-}
-
-function openModal() { 
-    if (modal) { 
-        const activeView = Array.from(document.querySelectorAll('.app-view')).find(v => !v.classList.contains('hidden'))?.id;
-        if (activeView === 'view-curatif') {
-            formType.value = "Curatif"; freqContainer.style.display = "none"; document.getElementById('formFrequence').value = "Ponctuel";
-        } else {
-            formType.value = "Préventif"; freqContainer.style.display = "block";
-        }
-        modal.classList.remove('hidden'); modal.classList.add('flex'); 
-    } 
-}
+function openModal() { if (modal) { modal.classList.remove('hidden'); modal.classList.add('flex'); } }
 function closeModal() { if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); } }
 if(document.getElementById('addInterventionBtn')) document.getElementById('addInterventionBtn').addEventListener('click', openModal);
 if(document.getElementById('closeModalBtn')) document.getElementById('closeModalBtn').addEventListener('click', closeModal);
@@ -400,16 +540,10 @@ if(document.getElementById('cancelModalBtn')) document.getElementById('cancelMod
 if(document.getElementById('addInterventionForm')) {
     document.getElementById('addInterventionForm').addEventListener('submit', async (e) => {
         e.preventDefault();
-        
         const btnSubmit = document.getElementById('btnSubmit');
         const originalText = btnSubmit.innerHTML;
-        
-        // RECUPERATION DES TECHNICIENS COCHES
         const techCheckboxes = document.querySelectorAll('input[name="tech"]:checked');
-        if (techCheckboxes.length === 0) {
-            alert("⚠️ Veuillez sélectionner au moins un technicien.");
-            return;
-        }
+        if (techCheckboxes.length === 0) { alert("⚠️ Veuillez sélectionner au moins un technicien."); return; }
         const techVal = Array.from(techCheckboxes).map(cb => cb.value).join(', ');
 
         btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Création...';
@@ -418,52 +552,26 @@ if(document.getElementById('addInterventionForm')) {
         const clientVal = document.getElementById('formClient').value;
         const machineVal = document.getElementById('formMachine').value;
         const dateVal = document.getElementById('formDate').value;
-        const typeVal = formType.value;
+        const typeVal = document.getElementById('formType').value;
         const freqVal = document.getElementById('formFrequence').value;
 
         try {
             if (machineVal === "TOUTES_LES_MACHINES") {
                 const machinesDuClient = parcClientsDB[clientVal].machines;
                 for (const m of machinesDuClient) {
-                    await addDoc(collection(db, "interventions"), {
-                        client: clientVal,
-                        machine: m,
-                        date: dateVal,
-                        type: typeVal,
-                        technicien: techVal,
-                        statut: "Planifié",
-                        frequence: freqVal,
-                        timestamp: serverTimestamp()
-                    });
+                    await addDoc(collection(db, "interventions"), { client: clientVal, machine: m, date: dateVal, type: typeVal, technicien: techVal, statut: "Planifié", frequence: freqVal, timestamp: serverTimestamp() });
                 }
                 alert(`${machinesDuClient.length} interventions planifiées avec succès pour ${clientVal} !`);
             } else {
-                await addDoc(collection(db, "interventions"), {
-                    client: clientVal,
-                    machine: machineVal,
-                    date: dateVal,
-                    type: typeVal,
-                    technicien: techVal,
-                    statut: "Planifié",
-                    frequence: freqVal,
-                    timestamp: serverTimestamp()
-                });
+                await addDoc(collection(db, "interventions"), { client: clientVal, machine: machineVal, date: dateVal, type: typeVal, technicien: techVal, statut: "Planifié", frequence: freqVal, timestamp: serverTimestamp() });
             }
-            
-            e.target.reset();
-            document.getElementById('formMachine').innerHTML = '<option value="" disabled selected>Choisir un client d\'abord</option>';
-            closeModal();
-        } catch(err) {
-            console.error(err);
-            alert("Erreur lors de la création");
-        } finally {
-            btnSubmit.innerHTML = originalText;
-            btnSubmit.disabled = false;
-        }
+            e.target.reset(); closeModal();
+        } catch(err) { console.error(err); alert("Erreur lors de la création"); } 
+        finally { btnSubmit.innerHTML = originalText; btnSubmit.disabled = false; }
     });
 }
-
 window.supprimerInterventionList = async function(id) { if (confirm("Voulez-vous vraiment supprimer ?")) await deleteDoc(doc(db, "interventions", id)); };
+
 
 // Navigation
 const navLinks = document.querySelectorAll('.nav-link');
@@ -480,60 +588,14 @@ navLinks.forEach(link => {
     });
 });
 
-// Docs (Base PDF)
-const providerDocs = {
-    "hypertherm": [
-        { name: "Manuel XPR170", file: "XPR170_MANUAL_EN.pdf" }, 
-        { name: "MAXPRO200", file: "MAXPRO200 Instruction Manual.pdf" },
-        { name: "HPR260AutoGasPREVENTIF", file: "HPR260 Auto Gas PREVENTIF.pdf" },
-        { name: "HPR260 MANUAL-GAS", file: "HPR260 MANUAL-GAS.pdf" },
-        { name: "HPR260XD Manual Gas Manual", file: "HPR260XD Manual Gas Manual.pdf" },
-        { name: "Manuel xpr300", file: "Manuel xpr300.pdf" }
-    ],
-    "beckhoff": [],
-    "cybelec": [],
-    "messer": [
-         { name: "BLOCOTELHA", file: "289001273-CIRCUIT_DIAGRAM-blocotelha.pdf" },
-         { name: "MAGHREBSTEEL-OMNIMAT", file: "260001958-CIRCUIT_DIAGRAM-maghrebsteel-OMNIMAT.PDF" },
-         { name: "MAGHREBSTEEL-MULTITHERM-ECO", file: "286002000-CIRCUIT_DIAGRAM-maghrebsteel-MULTITERM.pdf" },
-         { name: "SEFACAR", file: "289001295-CIRCUIT_DIAGRAM-SEFACAR.pdf" },
-    ],
-    "soprolec": [],
-    "fiessler": [],
-    "gullco": [],
-    "sturmer": [],
-    "euroboor": [],
-    "behringer": [],
-    "picot": [],
-    "dimeco": [],
-    "cesurbend": [],
-    "baisheng": [],
-    "ermaksan": [],
-    "vernet": []
-};
-
-const docsModal = document.getElementById('docsModal');
-if (document.getElementById('closeDocsModal')) document.getElementById('closeDocsModal').addEventListener('click', () => { docsModal.classList.add('hidden'); });
-document.querySelectorAll('.doc-folder').forEach(folder => {
-    folder.addEventListener('click', () => {
-        const folderName = folder.getAttribute('data-folder');
-        const files = providerDocs[folderName] || [];
-        if (files.length === 0) return alert(`Aucun document PDF.`);
-        document.getElementById('docsModalTitle').textContent = `Documents - ${folderName.toUpperCase()}`;
-        const container = document.getElementById('docsListContainer');
-        container.innerHTML = '';
-        files.forEach(docObj => {
-            container.innerHTML += `<a href="docs/${folderName}/${docObj.file}" target="_blank" class="flex p-3 mb-2 bg-slate-50 border rounded-xl">${docObj.name}</a>`;
-        });
-        docsModal.classList.remove('hidden'); docsModal.classList.add('flex');
-    });
-});
-
-// --- ENREGISTREMENT DU SERVICE WORKER (PWA) ---
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js')
-            .then(reg => reg.update())
-            .catch(err => console.error('Erreur Service Worker', err));
+// Docs (Base PDF condensée pour l'affichage)
+const providerDocs = { "hypertherm": [], "beckhoff": [], "cybelec": [], "messer": [], "soprolec": [], "fiessler": [], "gullco": [], "sturmer": [], "euroboor": [], "behringer": [], "picot": [], "dimeco": [], "cesurbend": [], "baisheng": [], "ermaksan": [], "vernet": [] };
+const docsGridContainer = document.getElementById('docsGridContainer');
+if (docsGridContainer) {
+    Object.keys(providerDocs).forEach(folder => {
+        docsGridContainer.innerHTML += `<div class="doc-folder bg-white p-5 rounded-2xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer" data-folder="${folder}"><i class="fa-solid fa-folder-open text-3xl text-amber-500 mb-2"></i><h3 class="font-bold text-slate-800 text-sm capitalize">${folder}</h3></div>`;
     });
 }
+
+// PWA
+if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(err => console.error('Erreur SW', err)); }); }
