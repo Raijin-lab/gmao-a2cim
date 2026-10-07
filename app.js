@@ -251,20 +251,21 @@ function initCalendar() {
     const calendarEl = document.getElementById('calendar');
     if (!calendarEl) return;
     if (fullCalendarInstance) fullCalendarInstance.destroy();
+    
     fullCalendarInstance = new FullCalendar.Calendar(calendarEl, {
         initialView: window.innerWidth < 768 ? 'listMonth' : 'dayGridMonth', 
         locale: 'fr',
+        // NOUVEAU : Anti-surcharge visuelle. Affiche un lien "+X autres" si trop d'interventions le même jour
+        dayMaxEvents: true,
         headerToolbar: { 
             left: 'prev,next today', 
             center: 'title', 
-            // MODIFICATION: Remplacement de timeGridWeek par listDay
             right: window.innerWidth < 768 ? '' : 'dayGridMonth,listDay' 
         },
         buttonText: { today: "Aujourd'hui", month: 'Mois', list: 'Jour' },
         height: '100%', 
         events: [],
         eventClick: function(info) { ouvrirActionModal(info.event); },
-        // NOUVEAU: Clique sur une case du calendrier pour voir le détail de la journée
         dateClick: function(info) {
             fullCalendarInstance.changeView('listDay', info.dateStr);
         }
@@ -497,7 +498,6 @@ if(document.getElementById('addInterventionForm')) {
         const typeVal = document.getElementById('formType').value;
         const freqVal = document.getElementById('formFrequence').value;
 
-        // Fonction pour vérifier si l'intervention existe déjà
         function isDuplicate(c, m, d, t) {
             return allInterventions.some(i => i.client === c && i.machine === m && i.date === d && i.type === t && i.statut === "Planifié");
         }
@@ -505,28 +505,17 @@ if(document.getElementById('addInterventionForm')) {
         try {
             if (machineVal === "TOUTES_LES_MACHINES") {
                 const machinesDuClient = parcClientsDB[clientVal].machines;
-                let ajouts = 0;
-                let doublons = 0;
-                
+                let ajouts = 0; let doublons = 0;
                 for (const m of machinesDuClient) {
-                    if (isDuplicate(clientVal, m, dateVal, typeVal)) {
-                        doublons++; // On ignore la création pour éviter le doublon
-                    } else {
-                        await addDoc(collection(db, "interventions"), { client: clientVal, machine: m, date: dateVal, type: typeVal, technicien: techVal, statut: "Planifié", frequence: freqVal, timestamp: serverTimestamp() });
-                        ajouts++;
-                    }
+                    if (isDuplicate(clientVal, m, dateVal, typeVal)) { doublons++; } 
+                    else { await addDoc(collection(db, "interventions"), { client: clientVal, machine: m, date: dateVal, type: typeVal, technicien: techVal, statut: "Planifié", frequence: freqVal, timestamp: serverTimestamp() }); ajouts++; }
                 }
-                
                 let alertMsg = `${ajouts} interventions planifiées avec succès pour ${clientVal} !`;
                 if (doublons > 0) alertMsg += `\n⚠️ ${doublons} intervention(s) ignorée(s) car déjà existante(s) à cette date.`;
                 alert(alertMsg);
-                
             } else {
-                if (isDuplicate(clientVal, machineVal, dateVal, typeVal)) {
-                    alert("⚠️ Cette intervention est déjà planifiée à cette date pour cette machine ! (Doublon évité)");
-                } else {
-                    await addDoc(collection(db, "interventions"), { client: clientVal, machine: machineVal, date: dateVal, type: typeVal, technicien: techVal, statut: "Planifié", frequence: freqVal, timestamp: serverTimestamp() });
-                }
+                if (isDuplicate(clientVal, machineVal, dateVal, typeVal)) { alert("⚠️ Cette intervention est déjà planifiée à cette date pour cette machine ! (Doublon évité)"); } 
+                else { await addDoc(collection(db, "interventions"), { client: clientVal, machine: machineVal, date: dateVal, type: typeVal, technicien: techVal, statut: "Planifié", frequence: freqVal, timestamp: serverTimestamp() }); }
             }
             e.target.reset(); closeModal();
         } catch(err) { console.error(err); alert("Erreur lors de la création"); } 
@@ -534,16 +523,37 @@ if(document.getElementById('addInterventionForm')) {
     });
 }
 
-// Navigation
+// Navigation & Gestion du bouton "+"
 const navLinks = document.querySelectorAll('.nav-link');
 const appViews = document.querySelectorAll('.app-view');
+const addBtn = document.getElementById('addInterventionBtn');
+// Le bouton "+" ne s'affiche que sur ces vues
+const allowedViewsForAddBtn = ['dashboard', 'planning', 'curatif'];
+
 navLinks.forEach(link => {
     link.addEventListener('click', (e) => {
         e.preventDefault();
         const targetView = link.getAttribute('data-view');
+        
+        // 1. Masquer toutes les vues, afficher la bonne
         appViews.forEach(view => view.classList.add('hidden'));
         document.getElementById(`view-${targetView}`).classList.remove('hidden');
+        
+        // 2. Gestion du calendrier s'il est affiché
         if (targetView === 'planning' && fullCalendarInstance) setTimeout(() => { fullCalendarInstance.render(); }, 100);
+        
+        // 3. Gestion du bouton d'ajout (Disparaît si on est dans le parc, le stock, etc.)
+        if (addBtn) {
+            if (allowedViewsForAddBtn.includes(targetView)) {
+                addBtn.classList.remove('opacity-0', 'pointer-events-none');
+                addBtn.classList.add('opacity-100');
+            } else {
+                addBtn.classList.remove('opacity-100');
+                addBtn.classList.add('opacity-0', 'pointer-events-none');
+            }
+        }
+        
+        // 4. MAJ visuelle du menu
         navLinks.forEach(l => { l.classList.remove('bg-brand-800', 'text-white'); l.classList.add('text-slate-400'); });
         document.querySelectorAll(`[data-view="${targetView}"]`).forEach(activeL => { activeL.classList.add('bg-brand-800', 'text-white'); activeL.classList.remove('text-slate-400'); });
     });
