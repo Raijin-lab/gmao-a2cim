@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1e3a8a">
     <title>GMAO pro A2CIM - Tableau de bord</title>
 
-    <link rel="stylesheet" href="style.css?v=28">
+    <link rel="stylesheet" href="style.css?v=29">
     <link rel="manifest" href="manifest.json">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -81,15 +81,15 @@
 
         <main class="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 no-scrollbar w-full relative flex flex-col h-full">
             
-            <!-- VUE 1 : TABLEAU DE BORD -->
+            <!-- VUE 1 : TABLEAU DE BORD (GROUPÉ PAR CLIENT) -->
             <div id="view-dashboard" class="app-view">
                 <header class="mb-8">
                     <h2 class="text-2xl font-bold text-slate-800">Aperçu du Parc</h2>
-                    <p class="text-slate-500 text-sm mt-1">Centre de contrôle A2CIM en temps réel</p>
+                    <p class="text-slate-500 text-sm mt-1">Centre de contrôle. Cliquez sur un client pour voir ses machines.</p>
                 </header>
 
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center"><div class="flex items-center justify-between mb-2"><h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">À faire</h3><div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600"><i class="fa-solid fa-calendar-day"></i></div></div><p id="kpi-total" class="text-3xl font-bold text-slate-800">0</p></div>
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center"><div class="flex items-center justify-between mb-2"><h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Machines</h3><div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600"><i class="fa-solid fa-calendar-day"></i></div></div><p id="kpi-total" class="text-3xl font-bold text-slate-800">0</p></div>
                     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center"><div class="flex items-center justify-between mb-2"><h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">En retard</h3><div class="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-red-600"><i class="fa-solid fa-triangle-exclamation"></i></div></div><p id="kpi-retard" class="text-3xl font-bold text-red-600">0</p></div>
                     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center"><div class="flex items-center justify-between mb-2"><h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">En cours</h3><div class="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-600"><i class="fa-solid fa-screwdriver-wrench"></i></div></div><p id="kpi-encours" class="text-3xl font-bold text-slate-800">0</p></div>
                     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center"><div class="flex items-center justify-between mb-2"><h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Taux</h3><div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-600"><i class="fa-solid fa-check-double"></i></div></div><p id="kpi-taux" class="text-3xl font-bold text-slate-800">0%</p></div>
@@ -140,7 +140,7 @@
                 <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 mb-6">
                     <form id="formAddStock" class="flex flex-col sm:flex-row gap-3">
                         <input type="text" id="newStockRef" placeholder="Réf (ex: FIL-01)" required class="w-full sm:w-1/5 px-4 py-2 border border-slate-300 rounded-xl focus:ring-brand-500 text-sm">
-                        <input type="text" id="newStockNom" placeholder="Désignation (ex: Filtre à air)" required class="w-full sm:w-2/5 px-4 py-2 border border-slate-300 rounded-xl focus:ring-brand-500 text-sm">
+                        <input type="text" id="newStockNom" placeholder="Désignation (ex: Filtre)" required class="w-full sm:w-2/5 px-4 py-2 border border-slate-300 rounded-xl focus:ring-brand-500 text-sm">
                         <input type="number" id="newStockQte" placeholder="Qté" required class="w-full sm:w-1/5 px-4 py-2 border border-slate-300 rounded-xl focus:ring-brand-500 text-sm">
                         <input type="number" id="newStockAlerte" placeholder="Alerte à..." required class="w-full sm:w-1/5 px-4 py-2 border border-slate-300 rounded-xl focus:ring-brand-500 text-sm">
                         <button type="submit" class="bg-brand-800 hover:bg-brand-900 text-white font-medium px-6 py-2 rounded-xl transition-colors"><i class="fa-solid fa-plus"></i></button>
@@ -151,10 +151,10 @@
 
             <!-- VUE : GESTION DU PARC -->
             <div id="view-parc" class="app-view hidden">
-                <header class="mb-6"><h2 class="text-2xl font-bold text-slate-800">Gestion du Parc Clients</h2><p class="text-slate-500 text-sm mt-1">Ajoutez vos clients et associez des Kits PDR à leurs machines.</p></header>
+                <header class="mb-6"><h2 class="text-2xl font-bold text-slate-800">Gestion du Parc Clients</h2></header>
                 <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 mb-6">
                     <form id="formAddClient" class="flex flex-col sm:flex-row gap-3">
-                        <input type="text" id="newClientName" placeholder="Nom du nouveau client (ex: SOMACA)" required class="flex-1 px-4 py-2 border border-slate-300 rounded-xl">
+                        <input type="text" id="newClientName" placeholder="Nom du nouveau client" required class="flex-1 px-4 py-2 border border-slate-300 rounded-xl">
                         <button type="submit" class="bg-brand-800 text-white font-medium px-6 py-2 rounded-xl"><i class="fa-solid fa-plus mr-2"></i> Ajouter Client</button>
                     </form>
                 </div>
@@ -179,8 +179,8 @@
         </main>
     </div>
 
-    <!-- MODAL D'ACTION (AVEC NOUVELLES OPTIONS DE SUPPRESSION) -->
-    <div id="eventActionModal" class="fixed inset-0 bg-slate-900 bg-opacity-60 hidden items-center justify-center z-50 px-4">
+    <!-- MODAL D'ACTION (AVEC SUPPRESSION DE MASSE RADICALE) -->
+    <div id="eventActionModal" class="fixed inset-0 bg-slate-900 bg-opacity-60 hidden items-center justify-center z-[60] px-4">
         <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center">
             <h3 id="actionModalTitle" class="text-lg font-bold text-slate-800 mb-1">Détails</h3>
             <p id="actionModalSub" class="text-sm text-slate-500 mb-4">Client / Machine</p>
@@ -199,11 +199,27 @@
                 <div class="pt-3 border-t border-slate-100 mt-3">
                     <p class="text-xs text-slate-400 mb-2 font-medium">Options de suppression :</p>
                     <button id="btnDeleteEvent" class="w-full py-2.5 bg-red-50 text-red-600 font-medium rounded-xl hover:bg-red-100 transition-colors text-sm mb-2">Supprimer cette machine uniquement</button>
-                    <!-- NOUVEAU BOUTON : SUPPRESSION DE MASSE -->
+                    <!-- BOUTON DE NETTOYAGE RACINE -->
                     <button id="btnDeleteGroup" class="w-full py-2.5 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-colors text-sm shadow-sm"><i class="fa-solid fa-dumpster mr-2"></i>Supprimer TOUT le groupe du client</button>
                 </div>
 
                 <button id="btnCloseActionModal" class="w-full py-2 text-slate-500 font-medium hover:text-slate-800 mt-2">Fermer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NOUVEAU MODAL : LISTE DES MACHINES DU GROUPE (POUR LE DASHBOARD) -->
+    <div id="groupModal" class="fixed inset-0 bg-slate-900 bg-opacity-60 hidden items-center justify-center z-50 px-4 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full flex flex-col max-h-[80vh]">
+            <div class="px-6 py-4 border-b flex justify-between items-center bg-slate-50 rounded-t-2xl">
+                <div>
+                    <h3 id="groupModalTitle" class="text-lg font-bold text-slate-800">Machines du Client</h3>
+                    <p id="groupModalSub" class="text-sm text-slate-500"></p>
+                </div>
+                <button onclick="fermerModalGroupe()" class="text-slate-400 hover:bg-slate-200 w-8 h-8 rounded-full flex items-center justify-center transition-colors"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div id="groupModalList" class="p-2 overflow-y-auto custom-scroll flex-1">
+                <!-- La liste des machines sera injectée ici -->
             </div>
         </div>
     </div>
@@ -227,6 +243,6 @@
         <a href="#" data-view="fiches" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-clipboard-list text-lg mb-1"></i><span class="text-[9px] font-medium">Fiches</span></a>
     </nav>
 
-    <script type="module" src="app.js?v=28"></script>
+    <script type="module" src="app.js?v=29"></script>
 </body>
 </html>
