@@ -211,13 +211,41 @@ if (document.getElementById('formAddClient')) { document.getElementById('formAdd
 
 
 // ==========================================
-// 3. EXPERTISE HYPERTHERM (SANS ORDERBY POUR EVITER LES ERREURS D'INDEX)
+// 3. EXPERTISE HYPERTHERM AVEC RÉFÉRENCES
 // ==========================================
+// NOUVEAU: Structure avec Références des Pièces Hypertherm
 const HT_RULES = {
-    "6M": { days: 182, parts: "Filtre liquide ref., Coolant 70/30, Filtre à air, Kit entretien torche" },
-    "12M": { days: 365, parts: "Corps de torche, Relais arc pilote, Contacteur principal" },
-    "24M": { days: 730, parts: "Kit pompe à eau, Faisceaux de torche (Leads)" },
-    "36M": { days: 1095, parts: "Ventilateurs, Moteur de pompe hydraulique" }
+    "6M": { 
+        days: 182, 
+        parts: [
+            { ref: "027664", nom: "Filtre à air principal" },
+            { ref: "028872", nom: "Coolant 70/30 (Liquide refroidissement)" },
+            { ref: "027665", nom: "Filtre liquide de refroidissement" },
+            { ref: "428383", nom: "Kit d'entretien torche" }
+        ] 
+    },
+    "12M": { 
+        days: 365, 
+        parts: [
+            { ref: "003149", nom: "Relais arc pilote" },
+            { ref: "003150", nom: "Contacteur principal" },
+            { ref: "428144", nom: "Corps de torche (Main body)" }
+        ] 
+    },
+    "24M": { 
+        days: 730, 
+        parts: [
+            { ref: "428384", nom: "Kit pompe à eau (Coolant pump kit)" },
+            { ref: "428385", nom: "Faisceaux de torche (Torch leads)" }
+        ] 
+    },
+    "36M": { 
+        days: 1095, 
+        parts: [
+            { ref: "027666", nom: "Ventilateurs de refroidissement" },
+            { ref: "027667", nom: "Moteur de pompe hydraulique" }
+        ] 
+    }
 };
 
 const qHT = query(collection(db, "hypertherm"));
@@ -234,7 +262,6 @@ onSnapshot(qHT, (snapshot) => {
         const data = docSnap.data(); data.id = docSnap.id; hyperthermDB.push(data);
     });
 
-    // Tri local en JS
     hyperthermDB.sort((a, b) => new Date(a.dateInstallation) - new Date(b.dateInstallation));
 
     const now = new Date();
@@ -269,6 +296,18 @@ onSnapshot(qHT, (snapshot) => {
             });
             timelineHTML += `</div>`;
 
+            // Construction de la liste des pièces et du texte à copier
+            let partsHTML = '<ul class="mt-3 space-y-2">';
+            let textToCopy = `Demande PDR - Préventif Hypertherm A2CIM\nClient: ${data.client}\nMachine: ${data.machine} (${data.modele})\nIntervention: ${prochaineEcheance.nom}\n\nPièces à commander :\n`;
+            
+            prochaineEcheance.parts.forEach(p => {
+                partsHTML += `<li class="flex justify-between items-center text-xs border-b border-amber-200/50 pb-1.5"><span class="text-slate-700 font-medium">${p.nom}</span><span class="font-mono font-bold text-amber-700 bg-amber-100/50 px-2 py-0.5 rounded border border-amber-200">Réf: ${p.ref}</span></li>`;
+                textToCopy += `- [Réf: ${p.ref}] ${p.nom}\n`;
+            });
+            partsHTML += '</ul>';
+
+            const safeText = encodeURIComponent(textToCopy);
+
             container.innerHTML += `
             <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 relative overflow-hidden">
                 <button onclick="supprimerHypertherm('${data.id}')" class="absolute top-4 right-4 text-slate-300 hover:text-red-500"><i class="fa-solid fa-trash-can"></i></button>
@@ -276,10 +315,20 @@ onSnapshot(qHT, (snapshot) => {
                     <div class="w-12 h-12 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-500 text-2xl shadow-inner"><i class="fa-solid fa-bolt"></i></div>
                     <div><h3 class="font-bold text-lg text-slate-800 uppercase">${data.client} <span class="text-slate-400 font-normal mx-1">|</span> ${data.machine}</h3><p class="text-sm text-slate-500 font-medium">${data.modele} &nbsp;&bull;&nbsp; <span class="text-slate-400">Installé le ${instDate.toLocaleDateString('fr-FR')} (${data.shifts} Poste${data.shifts>1?'s':''})</span></p></div>
                 </div>
-                <div class="bg-slate-50 border border-slate-100 rounded-xl p-4 mt-2">
-                    <div class="flex items-center justify-between mb-2"><span class="text-xs font-bold uppercase tracking-wider text-slate-500">Prochaine Intervention : ${prochaineEcheance.nom}</span><span class="text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider ${couleurBadge}">${iconBadge}</span></div>
-                    <p class="text-brand-900 font-medium text-sm leading-relaxed"><i class="fa-solid fa-boxes-stacked mr-2 text-brand-400"></i> ${prochaineEcheance.parts}</p>
+                
+                <div class="bg-amber-50/50 border border-amber-100 rounded-xl p-4 mt-2">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Prochaine Intervention : ${prochaineEcheance.nom}</span>
+                        <span class="text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider ${couleurBadge}">${iconBadge}</span>
+                    </div>
+                    
+                    <div class="flex justify-between items-center mb-1">
+                        <p class="text-amber-900 font-bold text-xs uppercase tracking-wider"><i class="fa-solid fa-boxes-stacked mr-1 text-amber-500"></i> Liste d'achat</p>
+                        <button onclick="navigator.clipboard.writeText(decodeURIComponent('${safeText}')).then(()=>alert('✅ Liste copiée pour le service Achat !'))" class="text-[10px] bg-amber-200 hover:bg-amber-300 text-amber-900 px-2 py-1.5 rounded-lg font-bold transition-colors shadow-sm"><i class="fa-solid fa-copy mr-1"></i> Copier</button>
+                    </div>
+                    ${partsHTML}
                 </div>
+                
                 ${timelineHTML}
             </div>`;
         }
@@ -289,22 +338,17 @@ onSnapshot(qHT, (snapshot) => {
 if (document.getElementById('formAddHypertherm')) {
     document.getElementById('formAddHypertherm').addEventListener('submit', async (e) => {
         e.preventDefault();
-        const btnSubmit = e.target.querySelector('button[type="submit"]');
-        const origTxt = btnSubmit.innerHTML;
+        const btnSubmit = e.target.querySelector('button[type="submit"]'); const origTxt = btnSubmit.innerHTML;
         btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; btnSubmit.disabled = true;
-
         try {
             const client = document.getElementById('htClient').value; const machine = document.getElementById('htMachine').value;
             const modele = document.getElementById('htModel').value; const dateInst = document.getElementById('htDateInst').value;
             const shifts = parseInt(document.getElementById('htShifts').value);
-
             if (!client || !machine) { alert("Sélectionnez un client et une machine."); return; }
-            
             await addDoc(collection(db, "hypertherm"), { client: client, machine: machine, modele: modele, dateInstallation: dateInst, shifts: shifts, timestamp: serverTimestamp() });
             e.target.reset(); document.getElementById('htMachine').innerHTML = '<option value="" disabled selected>Machine...</option>';
             alert(`Le générateur ${modele} est maintenant surveillé pour ${client}.`);
-        } catch(error) { console.error(error); alert("Erreur d'association : " + error.message); } 
-        finally { btnSubmit.innerHTML = origTxt; btnSubmit.disabled = false; }
+        } catch(error) { console.error(error); alert("Erreur d'association : " + error.message); } finally { btnSubmit.innerHTML = origTxt; btnSubmit.disabled = false; }
     });
 }
 window.supprimerHypertherm = async function(id) { if (confirm("Arrêter la surveillance de ce générateur Hypertherm ?")) await deleteDoc(doc(db, "hypertherm", id)); };
