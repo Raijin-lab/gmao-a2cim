@@ -238,7 +238,7 @@ if (document.getElementById('formAddClient')) {
 
 
 // ==========================================
-// CONFIG STATUTS & CALENDRIER
+// CONFIG STATUTS & CALENDRIER INTELLIGENT
 // ==========================================
 const statusConfig = {
     "En retard": { bg: "#fef2f2", border: "#ef4444", text: "#b91c1c", color: "#ef4444" },
@@ -255,8 +255,13 @@ function initCalendar() {
     fullCalendarInstance = new FullCalendar.Calendar(calendarEl, {
         initialView: window.innerWidth < 768 ? 'listMonth' : 'dayGridMonth', 
         locale: 'fr',
-        // NOUVEAU : Anti-surcharge visuelle. Affiche un lien "+X autres" si trop d'interventions le même jour
-        dayMaxEvents: true,
+        
+        // --- NOUVELLES FONCTIONS CALENDRIER (Semaines, Anti-surcharge) ---
+        weekNumbers: true,           // Affiche les Sxx
+        weekText: 'S',               // Met "S" devant le numéro
+        dayMaxEvents: 2,             // Affiche 2 machines, puis "+ X autres"
+        moreLinkClick: 'listDay',    // Clic sur "+ X autres" => bascule vue Journée (Liste)
+        
         headerToolbar: { 
             left: 'prev,next today', 
             center: 'title', 
@@ -265,30 +270,58 @@ function initCalendar() {
         buttonText: { today: "Aujourd'hui", month: 'Mois', list: 'Jour' },
         height: '100%', 
         events: [],
+        
+        // Actions au Clic
         eventClick: function(info) { ouvrirActionModal(info.event); },
         dateClick: function(info) {
+            // Clic sur une case vide du calendrier => bascule vue Journée (Liste)
             fullCalendarInstance.changeView('listDay', info.dateStr);
         }
     });
     fullCalendarInstance.render();
 }
+
 function updateCalendarEvents() {
     if (!fullCalendarInstance) return;
     fullCalendarInstance.removeAllEvents();
+    
     const todayStr = new Date().toISOString().split('T')[0];
+    const preventifDates = new Set(); // Pour mémoriser les jours préventifs
+    
     allInterventions.forEach(data => {
         if (currentClientFilter !== "ALL" && data.client !== currentClientFilter) return;
         if (currentTypeFilter !== "ALL" && data.type !== currentTypeFilter) return;
+        
         let eventColor = statusConfig[data.statut]?.color || "#3b82f6";
         if (data.statut !== "Terminé" && data.date < todayStr) eventColor = "#ef4444"; 
         else if (data.statut === "Planifié" && data.type === "Curatif") eventColor = "#ef4444"; 
+        
+        // Mémorise la date si c'est du préventif
+        if (data.type === "Préventif") preventifDates.add(data.date);
+        
+        // Titre : Affiche directement le Client ET la Machine dans le calendrier
+        let eventTitle = data.type === "Curatif" ? `🚨 ${data.client} - ${data.machine}` : `🔧 ${data.client} - ${data.machine}`;
+
         fullCalendarInstance.addEvent({
-            id: data.id, title: data.type === "Curatif" ? `🚨 ${data.machine}` : `🔧 ${data.machine}`, start: data.date,
-            backgroundColor: eventColor, borderColor: eventColor,
+            id: data.id, 
+            title: eventTitle, 
+            start: data.date,
+            backgroundColor: eventColor, 
+            borderColor: eventColor,
             extendedProps: { client: data.client, statut: data.statut, frequence: data.frequence || 'Ponctuel', type: data.type, machine: data.machine, technicien: data.technicien }
         });
     });
+    
+    // Ajoute un fond gris clair pour toutes les journées ayant du préventif
+    preventifDates.forEach(dateStr => {
+        fullCalendarInstance.addEvent({
+            start: dateStr,
+            display: 'background',
+            backgroundColor: '#f1f5f9' // Gris très clair
+        });
+    });
 }
+
 const clientFilterSelect = document.getElementById('calendarClientFilter');
 if (clientFilterSelect) clientFilterSelect.addEventListener('change', (e) => { currentClientFilter = e.target.value; updateCalendarEvents(); });
 const typeFilterSelect = document.getElementById('calendarTypeFilter');
@@ -307,7 +340,11 @@ window.ouvrirActionModal = function(eventOrId) {
         const intData = allInterventions.find(i => i.id === eventOrId);
         if(!intData) return;
         id = intData.id; props = { client: intData.client, machine: intData.machine, statut: intData.statut, frequence: intData.frequence || 'Ponctuel', type: intData.type }; title = intData.machine;
-    } else { id = eventOrId.id; props = eventOrId.extendedProps; title = eventOrId.title; }
+    } else { 
+        // Si c'est un background event (clic sur case grise via le title), on sort pour laisser agir dateClick
+        if(eventOrId.display === 'background') return;
+        id = eventOrId.id; props = eventOrId.extendedProps; title = props.machine; // Titre du modal redevient la machine
+    }
 
     document.getElementById('actionModalTitle').textContent = title;
     document.getElementById('actionModalSub').textContent = `${props.client} | ${props.frequence}`;
@@ -523,26 +560,20 @@ if(document.getElementById('addInterventionForm')) {
     });
 }
 
-// Navigation & Gestion du bouton "+"
+// Navigation & Bouton contextuel
 const navLinks = document.querySelectorAll('.nav-link');
 const appViews = document.querySelectorAll('.app-view');
 const addBtn = document.getElementById('addInterventionBtn');
-// Le bouton "+" ne s'affiche que sur ces vues
 const allowedViewsForAddBtn = ['dashboard', 'planning', 'curatif'];
 
 navLinks.forEach(link => {
     link.addEventListener('click', (e) => {
         e.preventDefault();
         const targetView = link.getAttribute('data-view');
-        
-        // 1. Masquer toutes les vues, afficher la bonne
         appViews.forEach(view => view.classList.add('hidden'));
         document.getElementById(`view-${targetView}`).classList.remove('hidden');
-        
-        // 2. Gestion du calendrier s'il est affiché
         if (targetView === 'planning' && fullCalendarInstance) setTimeout(() => { fullCalendarInstance.render(); }, 100);
         
-        // 3. Gestion du bouton d'ajout (Disparaît si on est dans le parc, le stock, etc.)
         if (addBtn) {
             if (allowedViewsForAddBtn.includes(targetView)) {
                 addBtn.classList.remove('opacity-0', 'pointer-events-none');
@@ -553,7 +584,6 @@ navLinks.forEach(link => {
             }
         }
         
-        // 4. MAJ visuelle du menu
         navLinks.forEach(l => { l.classList.remove('bg-brand-800', 'text-white'); l.classList.add('text-slate-400'); });
         document.querySelectorAll(`[data-view="${targetView}"]`).forEach(activeL => { activeL.classList.add('bg-brand-800', 'text-white'); activeL.classList.remove('text-slate-400'); });
     });
