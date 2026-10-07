@@ -255,12 +255,10 @@ function initCalendar() {
     fullCalendarInstance = new FullCalendar.Calendar(calendarEl, {
         initialView: window.innerWidth < 768 ? 'listMonth' : 'dayGridMonth', 
         locale: 'fr',
-        
-        // --- NOUVELLES FONCTIONS CALENDRIER (Semaines, Anti-surcharge) ---
-        weekNumbers: true,           // Affiche les Sxx
-        weekText: 'S',               // Met "S" devant le numéro
-        dayMaxEvents: 2,             // Affiche 2 machines, puis "+ X autres"
-        moreLinkClick: 'listDay',    // Clic sur "+ X autres" => bascule vue Journée (Liste)
+        weekNumbers: true,           
+        weekText: 'S',               
+        dayMaxEvents: 2,             
+        moreLinkClick: 'listDay',    
         
         headerToolbar: { 
             left: 'prev,next today', 
@@ -270,11 +268,8 @@ function initCalendar() {
         buttonText: { today: "Aujourd'hui", month: 'Mois', list: 'Jour' },
         height: '100%', 
         events: [],
-        
-        // Actions au Clic
         eventClick: function(info) { ouvrirActionModal(info.event); },
         dateClick: function(info) {
-            // Clic sur une case vide du calendrier => bascule vue Journée (Liste)
             fullCalendarInstance.changeView('listDay', info.dateStr);
         }
     });
@@ -286,7 +281,7 @@ function updateCalendarEvents() {
     fullCalendarInstance.removeAllEvents();
     
     const todayStr = new Date().toISOString().split('T')[0];
-    const preventifDates = new Set(); // Pour mémoriser les jours préventifs
+    const preventifDates = new Set();
     
     allInterventions.forEach(data => {
         if (currentClientFilter !== "ALL" && data.client !== currentClientFilter) return;
@@ -296,10 +291,7 @@ function updateCalendarEvents() {
         if (data.statut !== "Terminé" && data.date < todayStr) eventColor = "#ef4444"; 
         else if (data.statut === "Planifié" && data.type === "Curatif") eventColor = "#ef4444"; 
         
-        // Mémorise la date si c'est du préventif
         if (data.type === "Préventif") preventifDates.add(data.date);
-        
-        // Titre : Affiche directement le Client ET la Machine dans le calendrier
         let eventTitle = data.type === "Curatif" ? `🚨 ${data.client} - ${data.machine}` : `🔧 ${data.client} - ${data.machine}`;
 
         fullCalendarInstance.addEvent({
@@ -312,12 +304,11 @@ function updateCalendarEvents() {
         });
     });
     
-    // Ajoute un fond gris clair pour toutes les journées ayant du préventif
     preventifDates.forEach(dateStr => {
         fullCalendarInstance.addEvent({
             start: dateStr,
             display: 'background',
-            backgroundColor: '#f1f5f9' // Gris très clair
+            backgroundColor: '#f1f5f9'
         });
     });
 }
@@ -330,25 +321,38 @@ document.addEventListener('DOMContentLoaded', initCalendar);
 
 
 // ==========================================
-// MODAL D'ACTION ET DÉCREMENTATION DE STOCK
+// MODAL D'ACTION ET SUPPRESSION DE MASSE
 // ==========================================
 const actionModal = document.getElementById('eventActionModal');
 
 window.ouvrirActionModal = function(eventOrId) {
-    let id, props, title;
+    let id, props, title, dateVal;
+    
     if (typeof eventOrId === 'string') {
         const intData = allInterventions.find(i => i.id === eventOrId);
         if(!intData) return;
-        id = intData.id; props = { client: intData.client, machine: intData.machine, statut: intData.statut, frequence: intData.frequence || 'Ponctuel', type: intData.type }; title = intData.machine;
+        id = intData.id; 
+        props = { client: intData.client, machine: intData.machine, statut: intData.statut, frequence: intData.frequence || 'Ponctuel', type: intData.type }; 
+        title = intData.machine;
     } else { 
-        // Si c'est un background event (clic sur case grise via le title), on sort pour laisser agir dateClick
         if(eventOrId.display === 'background') return;
-        id = eventOrId.id; props = eventOrId.extendedProps; title = props.machine; // Titre du modal redevient la machine
+        id = eventOrId.id; 
+        props = eventOrId.extendedProps; 
+        title = props.machine; 
     }
+
+    // Récupérer la date exacte depuis la base de données
+    const exactData = allInterventions.find(i => i.id === id);
+    if(exactData) dateVal = exactData.date;
 
     document.getElementById('actionModalTitle').textContent = title;
     document.getElementById('actionModalSub').textContent = `${props.client} | ${props.frequence}`;
     document.getElementById('actionEventId').value = id;
+    
+    // NOUVELLES DONNÉES CACHÉES POUR LA SUPPRESSION DE MASSE
+    document.getElementById('actionEventDate').value = dateVal || "";
+    document.getElementById('actionEventClient').value = props.client;
+    document.getElementById('actionEventType').value = props.type;
     
     document.getElementById('btnSetEnCours').style.display = (props.statut === "Planifié") ? "block" : "none";
     document.getElementById('btnSetTermine').style.display = (props.statut !== "Terminé") ? "block" : "none";
@@ -368,9 +372,47 @@ window.ouvrirActionModal = function(eventOrId) {
 
 function fermerActionModal() { actionModal.classList.add('hidden'); actionModal.classList.remove('flex'); }
 document.getElementById('btnCloseActionModal').addEventListener('click', fermerActionModal);
+
+// SUPPRESSION SIMPLE (1 MACHINE)
 document.getElementById('btnDeleteEvent').addEventListener('click', async () => {
-    if (confirm("Supprimer l'intervention ?")) { await deleteDoc(doc(db, "interventions", document.getElementById('actionEventId').value)); fermerActionModal(); }
+    if (confirm("Supprimer l'intervention pour cette machine uniquement ?")) { 
+        await deleteDoc(doc(db, "interventions", document.getElementById('actionEventId').value)); 
+        fermerActionModal(); 
+    }
 });
+
+// NOUVEAU : SUPPRESSION DE MASSE (TOUT LE GROUPE)
+document.getElementById('btnDeleteGroup').addEventListener('click', async () => {
+    const client = document.getElementById('actionEventClient').value;
+    const date = document.getElementById('actionEventDate').value;
+    const type = document.getElementById('actionEventType').value;
+    
+    if (!client || !date) return;
+
+    if (confirm(`⚠️ DANGER : Voulez-vous vraiment supprimer TOUTES les interventions de ${client} prévues le ${date} ?`)) {
+        const btnDeleteGroup = document.getElementById('btnDeleteGroup');
+        const originalHtml = btnDeleteGroup.innerHTML;
+        btnDeleteGroup.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Nettoyage...';
+        btnDeleteGroup.disabled = true;
+
+        try {
+            // Filtrer toutes les interventions du même client, même jour, même type
+            const toDelete = allInterventions.filter(i => i.client === client && i.date === date && i.type === type && i.statut !== "Terminé");
+            for (const intv of toDelete) {
+                await deleteDoc(doc(db, "interventions", intv.id));
+            }
+        } catch (err) {
+            console.error(err);
+            alert("Erreur lors de la suppression du groupe.");
+        } finally {
+            btnDeleteGroup.innerHTML = originalHtml;
+            btnDeleteGroup.disabled = false;
+            fermerActionModal();
+        }
+    }
+});
+
+
 document.getElementById('btnSetEnCours').addEventListener('click', async () => {
     await updateDoc(doc(db, "interventions", document.getElementById('actionEventId').value), { statut: "En cours" }); fermerActionModal();
 });
