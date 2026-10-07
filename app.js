@@ -23,7 +23,7 @@ let stockDB = [];
 let kitsDB = {};  
 let tempKitPieces = [];
 let groupedInterventionsGlobal = {}; 
-let hyperthermDB = []; // NOUVEAU: Données Hypertherm
+let hyperthermDB = []; 
 
 // --- GESTION DU CODE PIN ---
 const CORRECT_PIN = "A2CIM2026";
@@ -135,20 +135,19 @@ const qClients = query(collection(db, "clients"), orderBy("nom", "asc"));
 onSnapshot(qClients, (snapshot) => {
     const parcContainer = document.getElementById('parc-container');
     const formClientSelect = document.getElementById('formClient');
+    const htClientSelect = document.getElementById('htClient');
     const calendarFilter = document.getElementById('calendarClientFilter');
-    const htClientSelect = document.getElementById('htClient'); // Pour Expertise Hypertherm
     
     if (parcContainer) parcContainer.innerHTML = '';
     const currentClientSelection = formClientSelect ? formClientSelect.value : "";
     if (formClientSelect) formClientSelect.innerHTML = '<option value="" disabled selected>Sélectionner...</option>';
-    if (htClientSelect) htClientSelect.innerHTML = '<option value="" disabled selected>Sélectionner...</option>';
+    if (htClientSelect) htClientSelect.innerHTML = '<option value="" disabled selected>Client...</option>';
     if (calendarFilter) calendarFilter.innerHTML = '<option value="ALL">Tous les clients</option>';
     parcClientsDB = {};
 
     snapshot.forEach(docSnap => {
         const data = docSnap.data(); const docId = docSnap.id; const machines = data.machines || [];
         parcClientsDB[data.nom] = { id: docId, machines: machines };
-        
         if (formClientSelect) formClientSelect.innerHTML += `<option value="${data.nom}">${data.nom}</option>`;
         if (htClientSelect) htClientSelect.innerHTML += `<option value="${data.nom}">${data.nom}</option>`;
         if (calendarFilter) calendarFilter.innerHTML += `<option value="${data.nom}">${data.nom}</option>`;
@@ -163,7 +162,7 @@ onSnapshot(qClients, (snapshot) => {
                 <div class="flex items-center justify-between bg-slate-50 px-3 py-2 rounded-lg mb-2 border border-slate-100">
                     <span class="text-sm text-slate-700 font-medium truncate flex-1"><i class="fa-solid fa-microchip text-slate-400 mr-2"></i>${m}</span>
                     <div class="flex items-center space-x-2 shrink-0">
-                        <button onclick="ouvrirModalKit('${data.nom}', '${m}')" class="px-2 py-1 bg-white border border-slate-200 rounded hover:bg-slate-100" title="Définir Pièces"><i class="fa-solid fa-boxes-stacked ${iconColor}"></i></button>
+                        <button onclick="ouvrirModalKit('${data.nom}', '${m}')" class="px-2 py-1 bg-white border border-slate-200 rounded hover:bg-slate-100"><i class="fa-solid fa-boxes-stacked ${iconColor}"></i></button>
                         <button onclick="supprimerMachineParc('${docId}', '${m}')" class="text-slate-300 hover:text-red-500 px-1"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                 </div>`;
@@ -188,12 +187,11 @@ onSnapshot(qClients, (snapshot) => {
 });
 
 function syncMachinesDropdown(clientSelectId, machineSelectId, allowAll = false) {
-    const clientSelect = document.getElementById(clientSelectId);
-    const machineSelect = document.getElementById(machineSelectId);
+    const clientSelect = document.getElementById(clientSelectId); const machineSelect = document.getElementById(machineSelectId);
     if (clientSelect && machineSelect) {
         clientSelect.addEventListener('change', (e) => {
             const nomClient = e.target.value;
-            machineSelect.innerHTML = '<option value="" disabled selected>Sélectionner machine...</option>';
+            machineSelect.innerHTML = '<option value="" disabled selected>Machine...</option>';
             if (parcClientsDB[nomClient]) {
                 if (allowAll && parcClientsDB[nomClient].machines.length > 0) {
                     machineSelect.innerHTML += `<option value="TOUTES_LES_MACHINES" class="font-bold text-brand-600">🌟 Toutes les machines (${parcClientsDB[nomClient].machines.length})</option>`;
@@ -204,7 +202,7 @@ function syncMachinesDropdown(clientSelectId, machineSelectId, allowAll = false)
     }
 }
 syncMachinesDropdown('formClient', 'formMachine', true);
-syncMachinesDropdown('htClient', 'htMachine', false); // HT Expertise
+syncMachinesDropdown('htClient', 'htMachine', false);
 
 window.ajouterMachineParc = async function(e, docId) { e.preventDefault(); const input = document.getElementById(`machineInput_${docId}`); if (!input.value.trim()) return; await updateDoc(doc(db, "clients", docId), { machines: arrayUnion(input.value.trim()) }); input.value = ''; };
 window.supprimerMachineParc = async function(docId, nomMachine) { if (confirm(`Supprimer la machine "${nomMachine}" ?`)) await updateDoc(doc(db, "clients", docId), { machines: arrayRemove(nomMachine) }); };
@@ -213,7 +211,7 @@ if (document.getElementById('formAddClient')) { document.getElementById('formAdd
 
 
 // ==========================================
-// 3. NOUVEAU MOTEUR : EXPERTISE HYPERTHERM
+// 3. EXPERTISE HYPERTHERM (SANS ORDERBY POUR EVITER LES ERREURS D'INDEX)
 // ==========================================
 const HT_RULES = {
     "6M": { days: 182, parts: "Filtre liquide ref., Coolant 70/30, Filtre à air, Kit entretien torche" },
@@ -222,42 +220,40 @@ const HT_RULES = {
     "36M": { days: 1095, parts: "Ventilateurs, Moteur de pompe hydraulique" }
 };
 
-const qHT = query(collection(db, "hypertherm"), orderBy("dateInstallation", "asc"));
+const qHT = query(collection(db, "hypertherm"));
 onSnapshot(qHT, (snapshot) => {
     hyperthermDB = [];
     const container = document.getElementById('hypertherm-container');
     if(container) container.innerHTML = '';
     
     if (snapshot.empty && container) {
-        container.innerHTML = '<p class="text-slate-500 italic">Aucun générateur Hypertherm enregistré. Utilisez le formulaire ci-dessus.</p>';
-        return;
+        container.innerHTML = '<p class="text-slate-500 italic">Aucun générateur Hypertherm enregistré.</p>'; return;
     }
 
-    const now = new Date();
-
     snapshot.forEach(docSnap => {
-        const data = docSnap.data();
-        data.id = docSnap.id;
-        hyperthermDB.push(data);
-        
+        const data = docSnap.data(); data.id = docSnap.id; hyperthermDB.push(data);
+    });
+
+    // Tri local en JS
+    hyperthermDB.sort((a, b) => new Date(a.dateInstallation) - new Date(b.dateInstallation));
+
+    const now = new Date();
+    hyperthermDB.forEach(data => {
         if (container) {
             const instDate = new Date(data.dateInstallation);
-            const shifts = data.shifts || 1; // Diviseur d'usure
+            const shifts = data.shifts || 1;
             
-            // Calculer les 4 grandes échéances selon les shifts (2x8 = divise le temps par 2)
             const datesEcheances = [
                 { nom: "6 Mois", daysRaw: HT_RULES["6M"].days, parts: HT_RULES["6M"].parts },
                 { nom: "1 An", daysRaw: HT_RULES["12M"].days, parts: HT_RULES["12M"].parts },
                 { nom: "2 Ans", daysRaw: HT_RULES["24M"].days, parts: HT_RULES["24M"].parts },
                 { nom: "3 Ans", daysRaw: HT_RULES["36M"].days, parts: HT_RULES["36M"].parts }
             ].map(rule => {
-                const echeanceDate = new Date(instDate);
-                echeanceDate.setDate(echeanceDate.getDate() + (rule.daysRaw / shifts));
+                const echeanceDate = new Date(instDate); echeanceDate.setDate(echeanceDate.getDate() + (rule.daysRaw / shifts));
                 return { ...rule, date: echeanceDate };
             });
 
-            // Trouver la PROCHAINE échéance pertinente
-            let prochaineEcheance = datesEcheances.find(e => e.date > now) || datesEcheances[datesEcheances.length - 1]; // Prend la dernière si tout est passé
+            let prochaineEcheance = datesEcheances.find(e => e.date > now) || datesEcheances[datesEcheances.length - 1];
             let estEnRetard = prochaineEcheance.date < now;
             
             const couleurBadge = estEnRetard ? 'bg-red-500 text-white' : 'bg-amber-100 text-amber-800';
@@ -266,16 +262,10 @@ onSnapshot(qHT, (snapshot) => {
             let timelineHTML = `<div class="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">`;
             datesEcheances.forEach(ech => {
                 const dateStr = ech.date.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' });
-                const isPassed = ech.date < now;
-                const isNext = ech.nom === prochaineEcheance.nom;
+                const isPassed = ech.date < now; const isNext = ech.nom === prochaineEcheance.nom;
                 const bgC = isPassed ? "bg-slate-100 border-slate-200" : (isNext ? "bg-amber-50 border-amber-300 shadow-md" : "bg-white border-slate-200");
                 const txtC = isPassed ? "text-slate-400" : (isNext ? "text-amber-800 font-bold" : "text-slate-600");
-                
-                timelineHTML += `
-                <div class="border rounded-xl p-3 text-center ${bgC}">
-                    <p class="text-xs uppercase tracking-wide mb-1 ${txtC}">${ech.nom}</p>
-                    <p class="text-sm font-bold ${txtC}">${dateStr}</p>
-                </div>`;
+                timelineHTML += `<div class="border rounded-xl p-3 text-center ${bgC}"><p class="text-xs uppercase tracking-wide mb-1 ${txtC}">${ech.nom}</p><p class="text-sm font-bold ${txtC}">${dateStr}</p></div>`;
             });
             timelineHTML += `</div>`;
 
@@ -284,20 +274,12 @@ onSnapshot(qHT, (snapshot) => {
                 <button onclick="supprimerHypertherm('${data.id}')" class="absolute top-4 right-4 text-slate-300 hover:text-red-500"><i class="fa-solid fa-trash-can"></i></button>
                 <div class="flex items-center gap-3 mb-4">
                     <div class="w-12 h-12 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-500 text-2xl shadow-inner"><i class="fa-solid fa-bolt"></i></div>
-                    <div>
-                        <h3 class="font-bold text-lg text-slate-800 uppercase">${data.client} <span class="text-slate-400 font-normal mx-1">|</span> ${data.machine}</h3>
-                        <p class="text-sm text-slate-500 font-medium">${data.modele} &nbsp;&bull;&nbsp; <span class="text-slate-400">Installé le ${instDate.toLocaleDateString('fr-FR')} (${data.shifts} Poste${data.shifts>1?'s':''})</span></p>
-                    </div>
+                    <div><h3 class="font-bold text-lg text-slate-800 uppercase">${data.client} <span class="text-slate-400 font-normal mx-1">|</span> ${data.machine}</h3><p class="text-sm text-slate-500 font-medium">${data.modele} &nbsp;&bull;&nbsp; <span class="text-slate-400">Installé le ${instDate.toLocaleDateString('fr-FR')} (${data.shifts} Poste${data.shifts>1?'s':''})</span></p></div>
                 </div>
-                
                 <div class="bg-slate-50 border border-slate-100 rounded-xl p-4 mt-2">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Prochaine Intervention : ${prochaineEcheance.nom}</span>
-                        <span class="text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider ${couleurBadge}">${iconBadge}</span>
-                    </div>
+                    <div class="flex items-center justify-between mb-2"><span class="text-xs font-bold uppercase tracking-wider text-slate-500">Prochaine Intervention : ${prochaineEcheance.nom}</span><span class="text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider ${couleurBadge}">${iconBadge}</span></div>
                     <p class="text-brand-900 font-medium text-sm leading-relaxed"><i class="fa-solid fa-boxes-stacked mr-2 text-brand-400"></i> ${prochaineEcheance.parts}</p>
                 </div>
-                
                 ${timelineHTML}
             </div>`;
         }
@@ -307,17 +289,22 @@ onSnapshot(qHT, (snapshot) => {
 if (document.getElementById('formAddHypertherm')) {
     document.getElementById('formAddHypertherm').addEventListener('submit', async (e) => {
         e.preventDefault();
-        const client = document.getElementById('htClient').value;
-        const machine = document.getElementById('htMachine').value;
-        const modele = document.getElementById('htModel').value;
-        const dateInst = document.getElementById('htDateInst').value;
-        const shifts = parseInt(document.getElementById('htShifts').value);
+        const btnSubmit = e.target.querySelector('button[type="submit"]');
+        const origTxt = btnSubmit.innerHTML;
+        btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; btnSubmit.disabled = true;
 
-        if (!client || !machine) return alert("Sélectionnez un client et une machine.");
-        
-        await addDoc(collection(db, "hypertherm"), { client: client, machine: machine, modele: modele, dateInstallation: dateInst, shifts: shifts, timestamp: serverTimestamp() });
-        e.target.reset();
-        alert(`Le générateur ${modele} est maintenant surveillé pour ${client}.`);
+        try {
+            const client = document.getElementById('htClient').value; const machine = document.getElementById('htMachine').value;
+            const modele = document.getElementById('htModel').value; const dateInst = document.getElementById('htDateInst').value;
+            const shifts = parseInt(document.getElementById('htShifts').value);
+
+            if (!client || !machine) { alert("Sélectionnez un client et une machine."); return; }
+            
+            await addDoc(collection(db, "hypertherm"), { client: client, machine: machine, modele: modele, dateInstallation: dateInst, shifts: shifts, timestamp: serverTimestamp() });
+            e.target.reset(); document.getElementById('htMachine').innerHTML = '<option value="" disabled selected>Machine...</option>';
+            alert(`Le générateur ${modele} est maintenant surveillé pour ${client}.`);
+        } catch(error) { console.error(error); alert("Erreur d'association : " + error.message); } 
+        finally { btnSubmit.innerHTML = origTxt; btnSubmit.disabled = false; }
     });
 }
 window.supprimerHypertherm = async function(id) { if (confirm("Arrêter la surveillance de ce générateur Hypertherm ?")) await deleteDoc(doc(db, "hypertherm", id)); };
@@ -326,18 +313,10 @@ window.supprimerHypertherm = async function(id) { if (confirm("Arrêter la surve
 // ==========================================
 // CONFIG STATUTS & CALENDRIER INTELLIGENT
 // ==========================================
-const statusConfig = {
-    "En retard": { bg: "#fef2f2", border: "#ef4444", text: "#b91c1c", color: "#ef4444" },
-    "En cours": { bg: "#fff7ed", border: "#f97316", text: "#c2410c", color: "#f97316" },
-    "Planifié": { bg: "#eff6ff", border: "#3b82f6", text: "#1d4ed8", color: "#3b82f6" },
-    "Terminé": { bg: "#f0fdf4", border: "#22c55e", text: "#15803d", color: "#22c55e" }
-};
+const statusConfig = { "En retard": { bg: "#fef2f2", border: "#ef4444", text: "#b91c1c", color: "#ef4444" }, "En cours": { bg: "#fff7ed", border: "#f97316", text: "#c2410c", color: "#f97316" }, "Planifié": { bg: "#eff6ff", border: "#3b82f6", text: "#1d4ed8", color: "#3b82f6" }, "Terminé": { bg: "#f0fdf4", border: "#22c55e", text: "#15803d", color: "#22c55e" } };
 
 function initCalendar() {
-    const calendarEl = document.getElementById('calendar');
-    if (!calendarEl) return;
-    if (fullCalendarInstance) fullCalendarInstance.destroy();
-    
+    const calendarEl = document.getElementById('calendar'); if (!calendarEl) return; if (fullCalendarInstance) fullCalendarInstance.destroy();
     fullCalendarInstance = new FullCalendar.Calendar(calendarEl, {
         initialView: window.innerWidth < 768 ? 'listMonth' : 'dayGridMonth', locale: 'fr',
         weekNumbers: true, weekText: 'S', dayMaxEvents: 2, moreLinkClick: 'listDay',    
@@ -350,11 +329,8 @@ function initCalendar() {
 }
 
 function updateCalendarEvents() {
-    if (!fullCalendarInstance) return;
-    fullCalendarInstance.removeAllEvents();
-    
-    const todayStr = new Date().toISOString().split('T')[0];
-    const preventifDates = new Set();
+    if (!fullCalendarInstance) return; fullCalendarInstance.removeAllEvents();
+    const todayStr = new Date().toISOString().split('T')[0]; const preventifDates = new Set();
     
     allInterventions.forEach(data => {
         if (currentClientFilter !== "ALL" && data.client !== currentClientFilter) return;
@@ -362,20 +338,15 @@ function updateCalendarEvents() {
         
         let eventColor = statusConfig[data.statut]?.color || "#3b82f6";
         if (data.statut !== "Terminé" && data.date < todayStr) eventColor = "#ef4444"; else if (data.statut === "Planifié" && data.type === "Curatif") eventColor = "#ef4444"; 
-        
         if (data.type === "Préventif") preventifDates.add(data.date);
         let eventTitle = data.type === "Curatif" ? `🚨 ${data.client} - ${data.machine}` : `🔧 ${data.client} - ${data.machine}`;
 
         fullCalendarInstance.addEvent({ id: data.id, title: eventTitle, start: data.date, backgroundColor: eventColor, borderColor: eventColor, extendedProps: { client: data.client, statut: data.statut, frequence: data.frequence || 'Ponctuel', type: data.type, machine: data.machine, technicien: data.technicien } });
     });
-    
     preventifDates.forEach(dateStr => { fullCalendarInstance.addEvent({ start: dateStr, display: 'background', backgroundColor: '#f1f5f9' }); });
 }
-
-const clientFilterSelect = document.getElementById('calendarClientFilter');
-if (clientFilterSelect) clientFilterSelect.addEventListener('change', (e) => { currentClientFilter = e.target.value; updateCalendarEvents(); });
-const typeFilterSelect = document.getElementById('calendarTypeFilter');
-if (typeFilterSelect) typeFilterSelect.addEventListener('change', (e) => { currentTypeFilter = e.target.value; updateCalendarEvents(); });
+const clientFilterSelect = document.getElementById('calendarClientFilter'); if (clientFilterSelect) clientFilterSelect.addEventListener('change', (e) => { currentClientFilter = e.target.value; updateCalendarEvents(); });
+const typeFilterSelect = document.getElementById('calendarTypeFilter'); if (typeFilterSelect) typeFilterSelect.addEventListener('change', (e) => { currentTypeFilter = e.target.value; updateCalendarEvents(); });
 document.addEventListener('DOMContentLoaded', initCalendar);
 
 
@@ -396,13 +367,10 @@ window.ouvrirActionModal = function(eventOrId) {
 
     const exactData = allInterventions.find(i => i.id === id); if(exactData) dateVal = exactData.date;
 
-    document.getElementById('actionModalTitle').textContent = title;
-    document.getElementById('actionModalSub').textContent = `${props.client} | ${props.frequence}`;
-    document.getElementById('actionEventId').value = id;
-    document.getElementById('actionEventDate').value = dateVal || ""; document.getElementById('actionEventClient').value = props.client; document.getElementById('actionEventType').value = props.type;
+    document.getElementById('actionModalTitle').textContent = title; document.getElementById('actionModalSub').textContent = `${props.client} | ${props.frequence}`;
+    document.getElementById('actionEventId').value = id; document.getElementById('actionEventDate').value = dateVal || ""; document.getElementById('actionEventClient').value = props.client; document.getElementById('actionEventType').value = props.type;
     
-    document.getElementById('btnSetEnCours').style.display = (props.statut === "Planifié") ? "block" : "none";
-    document.getElementById('btnSetTermine').style.display = (props.statut !== "Terminé") ? "block" : "none";
+    document.getElementById('btnSetEnCours').style.display = (props.statut === "Planifié") ? "block" : "none"; document.getElementById('btnSetTermine').style.display = (props.statut !== "Terminé") ? "block" : "none";
     
     const encartPDR = document.getElementById('actionModalPDR'); const ulPDR = document.getElementById('actionModalPDRList'); ulPDR.innerHTML = '';
     const theKit = kitsDB[props.client + "_" + props.machine];
@@ -410,12 +378,11 @@ window.ouvrirActionModal = function(eventOrId) {
         theKit.pieces.forEach(p => { ulPDR.innerHTML += `<li><span class="font-black bg-white text-brand-700 px-2 py-0.5 rounded mr-2 border border-brand-100">${p.qte}x</span> ${p.ref} - ${p.nom}</li>`; });
         encartPDR.classList.remove('hidden');
     } else { encartPDR.classList.add('hidden'); }
-
     actionModal.classList.remove('hidden'); actionModal.classList.add('flex');
 }
-
 function fermerActionModal() { actionModal.classList.add('hidden'); actionModal.classList.remove('flex'); }
 document.getElementById('btnCloseActionModal').addEventListener('click', fermerActionModal);
+
 document.getElementById('btnDeleteEvent').addEventListener('click', async () => { if (confirm("Supprimer l'intervention pour cette machine uniquement ?")) { await deleteDoc(doc(db, "interventions", document.getElementById('actionEventId').value)); fermerActionModal(); } });
 
 document.getElementById('btnDeleteGroup').addEventListener('click', async () => {
@@ -434,19 +401,15 @@ document.getElementById('btnSetEnCours').addEventListener('click', async () => {
 document.getElementById('btnSetTermine').addEventListener('click', async () => {
     const btnTermine = document.getElementById('btnSetTermine'); const originalContent = btnTermine.innerHTML;
     btnTermine.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Traitement...'; btnTermine.disabled = true;
-
     const id = document.getElementById('actionEventId').value; const interventionData = allInterventions.find(i => i.id === id);
     if (!interventionData) { fermerActionModal(); return; }
-
     try {
         let alertMessage = ""; const theKit = kitsDB[interventionData.client + "_" + interventionData.machine];
         if (interventionData.type === "Préventif" && theKit && theKit.pieces.length > 0) {
             for (const p of theKit.pieces) { await updateDoc(doc(db, "stock", p.idPiece), { qte: increment(-p.qte) }); }
             alertMessage = "\n\n📦 Les pièces ont été déduites du stock central de l'atelier !";
         }
-
         await updateDoc(doc(db, "interventions", id), { statut: "Terminé" });
-
         const freq = interventionData.frequence || "Ponctuel";
         if (freq !== "Ponctuel") {
             const dateObj = new Date(interventionData.date);
@@ -518,9 +481,7 @@ window.ouvrirModalGroupe = function(groupKey) {
     const group = groupedInterventionsGlobal[groupKey]; if (!group) return;
     document.getElementById('groupModalTitle').textContent = `Machines - ${group.client}`; document.getElementById('groupModalSub').textContent = `${group.dateAffichee} | ${group.type}`;
     const listContainer = document.getElementById('groupModalList'); listContainer.innerHTML = '';
-    group.machines.forEach(m => {
-        listContainer.innerHTML += `<div class="flex justify-between items-center p-3 border-b border-slate-100 hover:bg-slate-50 cursor-pointer transition-colors" onclick="fermerModalGroupe(); ouvrirActionModal('${m.id}')"><div><p class="font-bold text-slate-800">${m.machine}</p><p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-user-gear mr-1"></i> ${m.technicien}</p></div><i class="fa-solid fa-chevron-right text-slate-300"></i></div>`;
-    });
+    group.machines.forEach(m => { listContainer.innerHTML += `<div class="flex justify-between items-center p-3 border-b border-slate-100 hover:bg-slate-50 cursor-pointer transition-colors" onclick="fermerModalGroupe(); ouvrirActionModal('${m.id}')"><div><p class="font-bold text-slate-800">${m.machine}</p><p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-user-gear mr-1"></i> ${m.technicien}</p></div><i class="fa-solid fa-chevron-right text-slate-300"></i></div>`; });
     document.getElementById('groupModal').classList.remove('hidden'); document.getElementById('groupModal').classList.add('flex');
 }
 window.fermerModalGroupe = function() { document.getElementById('groupModal').classList.add('hidden'); document.getElementById('groupModal').classList.remove('flex'); }
