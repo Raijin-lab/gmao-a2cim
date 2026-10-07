@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1e3a8a">
     <title>GMAO pro A2CIM - Tableau de bord</title>
 
-    <link rel="stylesheet" href="style.css?v=29">
+    <link rel="stylesheet" href="style.css?v=30">
     <link rel="manifest" href="manifest.json">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -31,7 +31,6 @@
         .fc-event { cursor: pointer; border: none !important; padding: 4px; border-radius: 4px; font-weight: 500; font-size: 0.75rem; margin-bottom: 2px !important; }
         .fc-daygrid-day-frame { cursor: pointer; transition: background-color 0.2s; }
         .fc-daygrid-day-frame:hover { background-color: #f8fafc; }
-        
         .fc-week-number { font-weight: 700 !important; color: #64748b !important; font-size: 0.75rem !important; padding: 6px !important; background-color: #f1f5f9 !important; border-right: 1px solid #e2e8f0; }
         .fc-daygrid-more-link { font-weight: bold; color: #3b82f6 !important; font-size: 0.75rem; background: #eff6ff; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 2px;}
 
@@ -51,7 +50,6 @@
             <form id="pinForm" class="space-y-4 mt-6">
                 <input type="password" id="pinInput" placeholder="Code d'accès" required class="w-full text-center tracking-widest text-lg px-4 py-3 border border-slate-300 rounded-xl focus:ring-brand-500 bg-slate-50">
                 <button type="submit" class="w-full bg-brand-500 hover:bg-brand-600 text-white font-medium py-3 rounded-xl shadow-sm">Déverrouiller</button>
-                <p id="pinError" class="text-xs text-red-500 hidden">Code incorrect.</p>
             </form>
         </div>
     </div>
@@ -62,11 +60,15 @@
             <div class="bg-white text-brand-900 p-2 rounded-lg"><i class="fa-solid fa-cogs text-xl"></i></div>
             <h1 class="text-2xl font-bold tracking-wider">GMAO <span class="text-blue-300">A2CIM</span></h1>
         </div>
-        <nav class="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
+        <nav class="flex-1 px-4 py-6 space-y-2 overflow-y-auto custom-scroll">
             <a href="#" data-view="dashboard" class="nav-link flex items-center space-x-3 px-4 py-3 bg-brand-800 text-white rounded-xl"><i class="fa-solid fa-chart-pie w-6 text-center"></i><span class="font-medium">Tableau de Bord</span></a>
             <a href="#" data-view="planning" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-calendar-days w-6 text-center"></i><span class="font-medium">Calendrier Global</span></a>
             <a href="#" data-view="curatif" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-triangle-exclamation w-6 text-center"></i><span class="font-medium">Interv. Curatives</span></a>
             <a href="#" data-view="parc" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-industry w-6 text-center"></i><span class="font-medium">Gestion du Parc</span></a>
+            
+            <!-- NOUVEL ONGLET HYPERTHERM EXPERTISE -->
+            <a href="#" data-view="hypertherm" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-fire-flame-curved w-6 text-center text-amber-500"></i><span class="font-medium">Expertise Hypertherm</span></a>
+            
             <a href="#" data-view="stock" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-boxes-stacked w-6 text-center"></i><span class="font-medium">Stock PDR</span></a>
             <a href="#" data-view="docs" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-book-open w-6 text-center"></i><span class="font-medium">Base Doc.</span></a>
             <a href="#" data-view="fiches" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-clipboard-list w-6 text-center"></i><span class="font-medium">Fiches Interv.</span></a>
@@ -87,14 +89,12 @@
                     <h2 class="text-2xl font-bold text-slate-800">Aperçu du Parc</h2>
                     <p class="text-slate-500 text-sm mt-1">Centre de contrôle. Cliquez sur un client pour voir ses machines.</p>
                 </header>
-
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center"><div class="flex items-center justify-between mb-2"><h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Machines</h3><div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600"><i class="fa-solid fa-calendar-day"></i></div></div><p id="kpi-total" class="text-3xl font-bold text-slate-800">0</p></div>
                     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center"><div class="flex items-center justify-between mb-2"><h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">En retard</h3><div class="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-red-600"><i class="fa-solid fa-triangle-exclamation"></i></div></div><p id="kpi-retard" class="text-3xl font-bold text-red-600">0</p></div>
                     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center"><div class="flex items-center justify-between mb-2"><h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">En cours</h3><div class="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-600"><i class="fa-solid fa-screwdriver-wrench"></i></div></div><p id="kpi-encours" class="text-3xl font-bold text-slate-800">0</p></div>
                     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center"><div class="flex items-center justify-between mb-2"><h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Taux</h3><div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-600"><i class="fa-solid fa-check-double"></i></div></div><p id="kpi-taux" class="text-3xl font-bold text-slate-800">0%</p></div>
                 </div>
-
                 <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
                     <div class="bg-slate-50/50 p-4 rounded-2xl border border-red-100"><h2 class="text-lg font-bold text-red-600 mb-4 flex items-center"><i class="fa-solid fa-fire mr-2"></i> Urgences & Retards</h2><div id="urgent-tasks-container" class="space-y-3 max-h-[450px] overflow-y-auto custom-scroll pr-2"></div></div>
                     <div class="bg-slate-50/50 p-4 rounded-2xl border border-blue-100"><h2 class="text-lg font-bold text-brand-600 mb-4 flex items-center"><i class="fa-solid fa-calendar-check mr-2"></i> Préventif à venir</h2><div id="upcoming-tasks-container" class="space-y-3 max-h-[450px] overflow-y-auto custom-scroll pr-2"></div></div>
@@ -104,46 +104,72 @@
             <!-- VUE : CALENDRIER GLOBAL -->
             <div id="view-planning" class="app-view hidden flex-col h-full w-full">
                 <header class="mb-4 flex flex-col xl:flex-row justify-between items-start xl:items-end space-y-4 xl:space-y-0 shrink-0">
-                    <div>
-                        <h2 class="text-2xl font-bold text-slate-800">Calendrier Global</h2>
-                        <p class="text-slate-500 text-sm mt-1">Les jours préventifs sont en gris. Cliquez sur "+X autres" pour détailler la journée.</p>
-                    </div>
+                    <div><h2 class="text-2xl font-bold text-slate-800">Calendrier Global</h2></div>
                     <div class="flex flex-col sm:flex-row gap-3 w-full xl:w-auto">
-                        <div class="w-full sm:w-48">
-                            <label class="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Type</label>
-                            <select id="calendarTypeFilter" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white shadow-sm">
-                                <option value="ALL" selected>Tout afficher</option>
-                                <option value="Préventif">Préventif (Contrats)</option>
-                                <option value="Curatif">Curatif (Urgences)</option>
-                            </select>
-                        </div>
-                        <div class="w-full sm:w-48">
-                            <label class="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Client</label>
-                            <select id="calendarClientFilter" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white shadow-sm">
-                                <option value="ALL" selected>Tous les clients</option>
-                            </select>
-                        </div>
+                        <select id="calendarTypeFilter" class="w-full sm:w-48 px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-brand-500 bg-white"><option value="ALL" selected>Tout afficher</option><option value="Préventif">Préventif (Contrats)</option><option value="Curatif">Curatif (Urgences)</option></select>
+                        <select id="calendarClientFilter" class="w-full sm:w-48 px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-brand-500 bg-white"><option value="ALL" selected>Tous les clients</option></select>
                     </div>
                 </header>
-                
-                <div class="bg-white p-2 md:p-4 rounded-2xl shadow-sm border border-slate-100 flex-1 overflow-hidden flex flex-col min-h-[65vh]">
-                    <div id="calendar" class="flex-1 w-full h-full"></div>
-                </div>
+                <div class="bg-white p-2 md:p-4 rounded-2xl shadow-sm border border-slate-100 flex-1 overflow-hidden flex flex-col min-h-[65vh]"><div id="calendar" class="flex-1 w-full h-full"></div></div>
             </div>
 
             <!-- VUE : CURATIF -->
             <div id="view-curatif" class="app-view hidden"><header class="mb-6"><h2 class="text-2xl font-bold text-slate-800">Interventions Curatives</h2></header><div id="curatif-container" class="space-y-3"></div></div>
 
+            <!-- NOUVELLE VUE : EXPERTISE HYPERTHERM -->
+            <div id="view-hypertherm" class="app-view hidden flex-col h-full w-full">
+                <header class="mb-6">
+                    <h2 class="text-2xl font-bold text-slate-800 flex items-center"><i class="fa-solid fa-fire-flame-curved text-amber-500 mr-3"></i> Centre d'Expertise Hypertherm</h2>
+                    <p class="text-slate-500 text-sm mt-1">Planification automatique constructeur basée sur les heures d'arc converties en calendrier.</p>
+                </header>
+
+                <div class="bg-amber-50/50 p-5 rounded-2xl shadow-sm border border-amber-200 mb-8">
+                    <h3 class="text-sm font-bold text-amber-800 mb-3 uppercase tracking-wider flex items-center"><i class="fa-solid fa-plus-circle mr-2"></i> Enregistrer un générateur</h3>
+                    <form id="formAddHypertherm" class="grid grid-cols-1 md:grid-cols-6 gap-3">
+                        <div class="md:col-span-1"><select id="htClient" required class="w-full px-3 py-2 border border-amber-300 rounded-xl text-sm focus:ring-amber-500 bg-white"><option value="" disabled selected>Client...</option></select></div>
+                        <div class="md:col-span-1"><select id="htMachine" required class="w-full px-3 py-2 border border-amber-300 rounded-xl text-sm focus:ring-amber-500 bg-white"><option value="" disabled selected>Machine...</option></select></div>
+                        <div class="md:col-span-1">
+                            <select id="htModel" required class="w-full px-3 py-2 border border-amber-300 rounded-xl text-sm focus:ring-amber-500 bg-white">
+                                <option value="" disabled selected>Générateur...</option>
+                                <option value="XPR300">XPR 300</option>
+                                <option value="XPR170">XPR 170</option>
+                                <option value="HPR400XD">HPR 400 XD</option>
+                                <option value="HPR260XD">HPR 260 XD</option>
+                                <option value="MAXPRO200">MAXPRO 200</option>
+                            </select>
+                        </div>
+                        <div class="md:col-span-1" title="Date d'installation ou dernière révision majeure">
+                            <input type="date" id="htDateInst" required class="w-full px-3 py-2 border border-amber-300 rounded-xl text-sm focus:ring-amber-500 bg-white">
+                        </div>
+                        <div class="md:col-span-1" title="Cadence de production de l'usine">
+                            <select id="htShifts" required class="w-full px-3 py-2 border border-amber-300 rounded-xl text-sm focus:ring-amber-500 bg-white">
+                                <option value="1">1 Poste (8h/j)</option>
+                                <option value="2">2 Postes (16h/j)</option>
+                                <option value="3">3 Postes (24h/j)</option>
+                            </select>
+                        </div>
+                        <div class="md:col-span-1">
+                            <button type="submit" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 rounded-xl transition-colors shadow-sm">Associer</button>
+                        </div>
+                    </form>
+                </div>
+
+                <h3 class="text-lg font-bold text-slate-800 mb-4">Générateurs sous surveillance</h3>
+                <div id="hypertherm-container" class="grid grid-cols-1 gap-6 pb-12">
+                    <p class="text-slate-500 italic">Aucun générateur Hypertherm enregistré. Utilisez le formulaire ci-dessus.</p>
+                </div>
+            </div>
+
             <!-- VUE : STOCK PDR -->
             <div id="view-stock" class="app-view hidden">
-                <header class="mb-6"><h2 class="text-2xl font-bold text-slate-800">Stock PDR Central</h2><p class="text-slate-500 text-sm mt-1">Gérez l'inventaire de l'atelier A2CIM pour vos interventions.</p></header>
+                <header class="mb-6"><h2 class="text-2xl font-bold text-slate-800">Stock PDR Central</h2></header>
                 <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 mb-6">
                     <form id="formAddStock" class="flex flex-col sm:flex-row gap-3">
                         <input type="text" id="newStockRef" placeholder="Réf (ex: FIL-01)" required class="w-full sm:w-1/5 px-4 py-2 border border-slate-300 rounded-xl focus:ring-brand-500 text-sm">
                         <input type="text" id="newStockNom" placeholder="Désignation (ex: Filtre)" required class="w-full sm:w-2/5 px-4 py-2 border border-slate-300 rounded-xl focus:ring-brand-500 text-sm">
                         <input type="number" id="newStockQte" placeholder="Qté" required class="w-full sm:w-1/5 px-4 py-2 border border-slate-300 rounded-xl focus:ring-brand-500 text-sm">
                         <input type="number" id="newStockAlerte" placeholder="Alerte à..." required class="w-full sm:w-1/5 px-4 py-2 border border-slate-300 rounded-xl focus:ring-brand-500 text-sm">
-                        <button type="submit" class="bg-brand-800 hover:bg-brand-900 text-white font-medium px-6 py-2 rounded-xl transition-colors"><i class="fa-solid fa-plus"></i></button>
+                        <button type="submit" class="bg-brand-800 hover:bg-brand-900 text-white font-medium px-6 py-2 rounded-xl"><i class="fa-solid fa-plus"></i></button>
                     </form>
                 </div>
                 <div id="stock-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
@@ -184,43 +210,29 @@
         <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center">
             <h3 id="actionModalTitle" class="text-lg font-bold text-slate-800 mb-1">Détails</h3>
             <p id="actionModalSub" class="text-sm text-slate-500 mb-4">Client / Machine</p>
-            
-            <input type="hidden" id="actionEventId">
-            <input type="hidden" id="actionEventDate">
-            <input type="hidden" id="actionEventClient">
-            <input type="hidden" id="actionEventType">
-            
+            <input type="hidden" id="actionEventId"><input type="hidden" id="actionEventDate"><input type="hidden" id="actionEventClient"><input type="hidden" id="actionEventType">
             <div id="actionModalPDR" class="bg-brand-50 border border-brand-100 p-4 rounded-xl mb-6 text-left hidden shadow-inner"><h4 class="text-xs font-bold text-brand-800 mb-3 uppercase tracking-wider flex items-center"><i class="fa-solid fa-boxes-stacked mr-2"></i> Pièces à prévoir (Kit)</h4><ul id="actionModalPDRList" class="text-sm text-brand-900 space-y-2 font-medium"></ul></div>
-            
             <div class="space-y-3">
                 <button id="btnSetEnCours" class="w-full py-3 bg-orange-100 text-orange-700 font-bold rounded-xl">Passer "En Cours"</button>
                 <button id="btnSetTermine" class="w-full py-3 bg-green-500 hover:bg-green-600 transition-colors text-white font-bold rounded-xl shadow-sm"><i class="fa-solid fa-check mr-2"></i> Terminer l'intervention</button>
-                
                 <div class="pt-3 border-t border-slate-100 mt-3">
                     <p class="text-xs text-slate-400 mb-2 font-medium">Options de suppression :</p>
                     <button id="btnDeleteEvent" class="w-full py-2.5 bg-red-50 text-red-600 font-medium rounded-xl hover:bg-red-100 transition-colors text-sm mb-2">Supprimer cette machine uniquement</button>
-                    <!-- BOUTON DE NETTOYAGE RACINE -->
                     <button id="btnDeleteGroup" class="w-full py-2.5 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-colors text-sm shadow-sm"><i class="fa-solid fa-dumpster mr-2"></i>Supprimer TOUT le groupe du client</button>
                 </div>
-
                 <button id="btnCloseActionModal" class="w-full py-2 text-slate-500 font-medium hover:text-slate-800 mt-2">Fermer</button>
             </div>
         </div>
     </div>
 
-    <!-- NOUVEAU MODAL : LISTE DES MACHINES DU GROUPE (POUR LE DASHBOARD) -->
+    <!-- MODAL : LISTE DES MACHINES DU GROUPE (DASHBOARD) -->
     <div id="groupModal" class="fixed inset-0 bg-slate-900 bg-opacity-60 hidden items-center justify-center z-50 px-4 backdrop-blur-sm">
         <div class="bg-white rounded-2xl shadow-xl max-w-md w-full flex flex-col max-h-[80vh]">
             <div class="px-6 py-4 border-b flex justify-between items-center bg-slate-50 rounded-t-2xl">
-                <div>
-                    <h3 id="groupModalTitle" class="text-lg font-bold text-slate-800">Machines du Client</h3>
-                    <p id="groupModalSub" class="text-sm text-slate-500"></p>
-                </div>
+                <div><h3 id="groupModalTitle" class="text-lg font-bold text-slate-800">Machines du Client</h3><p id="groupModalSub" class="text-sm text-slate-500"></p></div>
                 <button onclick="fermerModalGroupe()" class="text-slate-400 hover:bg-slate-200 w-8 h-8 rounded-full flex items-center justify-center transition-colors"><i class="fa-solid fa-xmark text-lg"></i></button>
             </div>
-            <div id="groupModalList" class="p-2 overflow-y-auto custom-scroll flex-1">
-                <!-- La liste des machines sera injectée ici -->
-            </div>
+            <div id="groupModalList" class="p-2 overflow-y-auto custom-scroll flex-1"></div>
         </div>
     </div>
 
@@ -230,19 +242,17 @@
     <!-- Modal Ajout Intervention -->
     <div id="addInterventionModal" class="fixed inset-0 bg-slate-900 bg-opacity-60 hidden items-center justify-center z-50 px-4 backdrop-blur-sm transition-opacity"><div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full flex flex-col max-h-[90vh]"><div class="px-6 py-4 border-b flex justify-between items-center bg-slate-50"><h3 id="modalAddTitle" class="text-lg font-bold text-slate-800">Nouvelle Intervention</h3><button id="closeModalBtn" class="text-slate-400 hover:text-slate-700"><i class="fa-solid fa-xmark text-lg"></i></button></div><div class="p-6 overflow-y-auto custom-scroll"><form id="addInterventionForm" class="space-y-4"><div class="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label class="block text-sm font-medium text-slate-700 mb-1">Client</label><select id="formClient" required class="w-full px-3 py-2 border rounded-xl text-sm"></select></div><div><label class="block text-sm font-medium text-slate-700 mb-1">Machine</label><select id="formMachine" required class="w-full px-3 py-2 border rounded-xl text-sm"></select></div></div><div><label class="block text-sm font-medium text-slate-700 mb-1">Type</label><select id="formType" required class="w-full px-3 py-2 border rounded-xl text-sm"><option value="Préventif">Préventif</option><option value="Curatif">Curatif</option></select></div><div><label class="block text-sm font-medium text-slate-700 mb-1">Technicien(s) Assigné(s)</label><div class="grid grid-cols-2 gap-2 text-sm bg-slate-50 p-3 rounded-xl border border-slate-200"><label class="flex items-center space-x-2"><input type="checkbox" name="tech" value="NABIL" class="w-4 h-4 text-brand-500 rounded border-slate-300"> <span>NABIL</span></label><label class="flex items-center space-x-2"><input type="checkbox" name="tech" value="MEHDI" class="w-4 h-4 text-brand-500 rounded border-slate-300"> <span>MEHDI</span></label><label class="flex items-center space-x-2"><input type="checkbox" name="tech" value="BELKADI" class="w-4 h-4 text-brand-500 rounded border-slate-300"> <span>BELKADI</span></label><label class="flex items-center space-x-2"><input type="checkbox" name="tech" value="ABDELOUAHED" class="w-4 h-4 text-brand-500 rounded border-slate-300"> <span>ABDELOUAHED</span></label><label class="flex items-center space-x-2"><input type="checkbox" name="tech" value="O. LAFNISHA" class="w-4 h-4 text-brand-500 rounded border-slate-300"> <span>O. LAFNISHA</span></label><label class="flex items-center space-x-2"><input type="checkbox" name="tech" value="ZOUHAIR" class="w-4 h-4 text-brand-500 rounded border-slate-300"> <span>ZOUHAIR</span></label></div></div><div class="bg-slate-50 p-4 rounded-xl border mt-2"><div class="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label class="block text-sm font-medium text-slate-700 mb-1">Date</label><input type="date" id="formDate" required class="w-full px-3 py-2 border rounded-xl text-sm"></div><div id="frequenceContainer"><label class="block text-sm font-medium text-slate-700 mb-1">Récurrence</label><select id="formFrequence" class="w-full px-3 py-2 border rounded-xl text-sm"><option value="Ponctuel">Aucune (Ponctuel)</option><option value="Mensuel">Mensuelle</option><option value="Trimestriel">Trimestrielle</option><option value="Semestriel">Semestrielle</option><option value="Annuel">Annuelle</option></select></div></div></div></form></div><div class="px-6 py-4 border-t bg-slate-50 flex justify-end space-x-3"><button type="button" id="cancelModalBtn" class="px-4 py-2.5 text-sm bg-white border rounded-xl">Annuler</button><button type="submit" form="addInterventionForm" id="btnSubmit" class="px-4 py-2.5 text-sm text-white bg-brand-500 rounded-xl">Enregistrer</button></div></div></div>
 
-    <div id="docsModal" class="fixed inset-0 bg-slate-900 bg-opacity-60 hidden items-center justify-center z-50 px-4 backdrop-blur-sm"><div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6"><div class="flex justify-between items-center mb-4 border-b pb-3"><h3 id="docsModalTitle" class="text-lg font-bold text-slate-800">Documents</h3><button id="closeDocsModal" class="text-slate-400 hover:bg-slate-100 w-8 h-8 rounded-full"><i class="fa-solid fa-xmark"></i></button></div><div id="docsListContainer" class="space-y-2 max-h-60 overflow-y-auto custom-scroll"></div></div></div>
-
     <!-- Nav Mobile -->
     <nav class="md:hidden fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 flex overflow-x-auto custom-scroll py-2 pb-safe z-30 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
         <a href="#" data-view="dashboard" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-brand-850 w-20"><i class="fa-solid fa-chart-pie text-lg mb-1"></i><span class="text-[9px] font-medium">Bord</span></a>
         <a href="#" data-view="planning" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-calendar-days text-lg mb-1"></i><span class="text-[9px] font-medium">Global</span></a>
         <a href="#" data-view="curatif" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-triangle-exclamation text-lg mb-1"></i><span class="text-[9px] font-medium">Curatif</span></a>
         <a href="#" data-view="parc" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-industry text-lg mb-1"></i><span class="text-[9px] font-medium">Parc</span></a>
+        <a href="#" data-view="hypertherm" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-fire-flame-curved text-lg mb-1 text-amber-500"></i><span class="text-[9px] font-medium">HT</span></a>
         <a href="#" data-view="stock" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-boxes-stacked text-lg mb-1"></i><span class="text-[9px] font-medium">Stock</span></a>
         <a href="#" data-view="docs" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-book-open text-lg mb-1"></i><span class="text-[9px] font-medium">Docs</span></a>
-        <a href="#" data-view="fiches" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-clipboard-list text-lg mb-1"></i><span class="text-[9px] font-medium">Fiches</span></a>
     </nav>
 
-    <script type="module" src="app.js?v=29"></script>
+    <script type="module" src="app.js?v=30"></script>
 </body>
 </html>
