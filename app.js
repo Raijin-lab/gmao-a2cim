@@ -22,6 +22,7 @@ let currentTypeFilter = "ALL";
 let stockDB = []; 
 let kitsDB = {};  
 let tempKitPieces = [];
+let groupedInterventionsGlobal = {}; // NOUVEAU : Pour le tableau de bord groupé
 
 // --- GESTION DU CODE PIN ---
 const CORRECT_PIN = "A2CIM2026";
@@ -260,18 +261,11 @@ function initCalendar() {
         dayMaxEvents: 2,             
         moreLinkClick: 'listDay',    
         
-        headerToolbar: { 
-            left: 'prev,next today', 
-            center: 'title', 
-            right: window.innerWidth < 768 ? '' : 'dayGridMonth,listDay' 
-        },
+        headerToolbar: { left: 'prev,next today', center: 'title', right: window.innerWidth < 768 ? '' : 'dayGridMonth,listDay' },
         buttonText: { today: "Aujourd'hui", month: 'Mois', list: 'Jour' },
-        height: '100%', 
-        events: [],
+        height: '100%', events: [],
         eventClick: function(info) { ouvrirActionModal(info.event); },
-        dateClick: function(info) {
-            fullCalendarInstance.changeView('listDay', info.dateStr);
-        }
+        dateClick: function(info) { fullCalendarInstance.changeView('listDay', info.dateStr); }
     });
     fullCalendarInstance.render();
 }
@@ -295,21 +289,14 @@ function updateCalendarEvents() {
         let eventTitle = data.type === "Curatif" ? `🚨 ${data.client} - ${data.machine}` : `🔧 ${data.client} - ${data.machine}`;
 
         fullCalendarInstance.addEvent({
-            id: data.id, 
-            title: eventTitle, 
-            start: data.date,
-            backgroundColor: eventColor, 
-            borderColor: eventColor,
+            id: data.id, title: eventTitle, start: data.date,
+            backgroundColor: eventColor, borderColor: eventColor,
             extendedProps: { client: data.client, statut: data.statut, frequence: data.frequence || 'Ponctuel', type: data.type, machine: data.machine, technicien: data.technicien }
         });
     });
     
     preventifDates.forEach(dateStr => {
-        fullCalendarInstance.addEvent({
-            start: dateStr,
-            display: 'background',
-            backgroundColor: '#f1f5f9'
-        });
+        fullCalendarInstance.addEvent({ start: dateStr, display: 'background', backgroundColor: '#f1f5f9' });
     });
 }
 
@@ -321,7 +308,7 @@ document.addEventListener('DOMContentLoaded', initCalendar);
 
 
 // ==========================================
-// MODAL D'ACTION ET SUPPRESSION DE MASSE
+// MODAL D'ACTION ET SUPPRESSION RADICALE
 // ==========================================
 const actionModal = document.getElementById('eventActionModal');
 
@@ -331,17 +318,12 @@ window.ouvrirActionModal = function(eventOrId) {
     if (typeof eventOrId === 'string') {
         const intData = allInterventions.find(i => i.id === eventOrId);
         if(!intData) return;
-        id = intData.id; 
-        props = { client: intData.client, machine: intData.machine, statut: intData.statut, frequence: intData.frequence || 'Ponctuel', type: intData.type }; 
-        title = intData.machine;
+        id = intData.id; props = { client: intData.client, machine: intData.machine, statut: intData.statut, frequence: intData.frequence || 'Ponctuel', type: intData.type }; title = intData.machine;
     } else { 
         if(eventOrId.display === 'background') return;
-        id = eventOrId.id; 
-        props = eventOrId.extendedProps; 
-        title = props.machine; 
+        id = eventOrId.id; props = eventOrId.extendedProps; title = props.machine; 
     }
 
-    // Récupérer la date exacte depuis la base de données
     const exactData = allInterventions.find(i => i.id === id);
     if(exactData) dateVal = exactData.date;
 
@@ -349,7 +331,7 @@ window.ouvrirActionModal = function(eventOrId) {
     document.getElementById('actionModalSub').textContent = `${props.client} | ${props.frequence}`;
     document.getElementById('actionEventId').value = id;
     
-    // NOUVELLES DONNÉES CACHÉES POUR LA SUPPRESSION DE MASSE
+    // Pour la suppression de masse
     document.getElementById('actionEventDate').value = dateVal || "";
     document.getElementById('actionEventClient').value = props.client;
     document.getElementById('actionEventType').value = props.type;
@@ -373,15 +355,12 @@ window.ouvrirActionModal = function(eventOrId) {
 function fermerActionModal() { actionModal.classList.add('hidden'); actionModal.classList.remove('flex'); }
 document.getElementById('btnCloseActionModal').addEventListener('click', fermerActionModal);
 
-// SUPPRESSION SIMPLE (1 MACHINE)
+// SUPPRESSION SIMPLE
 document.getElementById('btnDeleteEvent').addEventListener('click', async () => {
-    if (confirm("Supprimer l'intervention pour cette machine uniquement ?")) { 
-        await deleteDoc(doc(db, "interventions", document.getElementById('actionEventId').value)); 
-        fermerActionModal(); 
-    }
+    if (confirm("Supprimer l'intervention pour cette machine uniquement ?")) { await deleteDoc(doc(db, "interventions", document.getElementById('actionEventId').value)); fermerActionModal(); }
 });
 
-// NOUVEAU : SUPPRESSION DE MASSE (TOUT LE GROUPE)
+// NOUVEAU : SUPPRESSION DE MASSE (RACINE)
 document.getElementById('btnDeleteGroup').addEventListener('click', async () => {
     const client = document.getElementById('actionEventClient').value;
     const date = document.getElementById('actionEventDate').value;
@@ -389,25 +368,22 @@ document.getElementById('btnDeleteGroup').addEventListener('click', async () => 
     
     if (!client || !date) return;
 
-    if (confirm(`⚠️ DANGER : Voulez-vous vraiment supprimer TOUTES les interventions de ${client} prévues le ${date} ?`)) {
+    if (confirm(`⚠️ DANGER : Voulez-vous vraiment supprimer ABSOLUMENT TOUTES les interventions de ${client} prévues le ${date} (même celles terminées) ?`)) {
         const btnDeleteGroup = document.getElementById('btnDeleteGroup');
         const originalHtml = btnDeleteGroup.innerHTML;
         btnDeleteGroup.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Nettoyage...';
         btnDeleteGroup.disabled = true;
 
         try {
-            // Filtrer toutes les interventions du même client, même jour, même type
-            const toDelete = allInterventions.filter(i => i.client === client && i.date === date && i.type === type && i.statut !== "Terminé");
+            // Pas de filtre sur le statut, on arrache tout à la racine !
+            const toDelete = allInterventions.filter(i => i.client === client && i.date === date && i.type === type);
             for (const intv of toDelete) {
                 await deleteDoc(doc(db, "interventions", intv.id));
             }
         } catch (err) {
-            console.error(err);
-            alert("Erreur lors de la suppression du groupe.");
+            console.error(err); alert("Erreur lors de la suppression du groupe.");
         } finally {
-            btnDeleteGroup.innerHTML = originalHtml;
-            btnDeleteGroup.disabled = false;
-            fermerActionModal();
+            btnDeleteGroup.innerHTML = originalHtml; btnDeleteGroup.disabled = false; fermerActionModal();
         }
     }
 });
@@ -431,9 +407,7 @@ document.getElementById('btnSetTermine').addEventListener('click', async () => {
         let alertMessage = "";
         const theKit = kitsDB[interventionData.client + "_" + interventionData.machine];
         if (interventionData.type === "Préventif" && theKit && theKit.pieces.length > 0) {
-            for (const p of theKit.pieces) {
-                await updateDoc(doc(db, "stock", p.idPiece), { qte: increment(-p.qte) });
-            }
+            for (const p of theKit.pieces) { await updateDoc(doc(db, "stock", p.idPiece), { qte: increment(-p.qte) }); }
             alertMessage = "\n\n📦 Les pièces ont été déduites du stock central de l'atelier !";
         }
 
@@ -454,9 +428,7 @@ document.getElementById('btnSetTermine').addEventListener('click', async () => {
                 frequence: freq, timestamp: serverTimestamp()
             });
             alert(`Intervention clôturée. Prochaine maintenance prévue le ${nouvelleDateStr}.` + alertMessage);
-        } else {
-            alert("Intervention clôturée avec succès." + alertMessage);
-        }
+        } else { alert("Intervention clôturée avec succès." + alertMessage); }
     } catch (e) {
         console.error(e); alert("Une erreur s'est produite lors de la validation.");
     } finally {
@@ -466,7 +438,7 @@ document.getElementById('btnSetTermine').addEventListener('click', async () => {
 
 
 // ==========================================
-// SYNCHRO & TABLEAU DE BORD INTELLIGENT
+// SYNCHRO & TABLEAU DE BORD (GROUPÉ PAR CLIENT)
 // ==========================================
 const q = query(collection(db, "interventions"), orderBy("date", "asc"));
 onSnapshot(q, (snapshot) => {
@@ -479,9 +451,12 @@ onSnapshot(q, (snapshot) => {
     if (curatifContainer) curatifContainer.innerHTML = '';
     
     allInterventions = [];
+    groupedInterventionsGlobal = {}; // Remise à zéro des groupes
+    
     let activeTotalCount = 0; let retardCount = 0; let enCoursCount = 0;
     const todayStr = new Date().toISOString().split('T')[0];
 
+    // 1. Première boucle : On peuple allInterventions et on groupe les non-terminées
     snapshot.forEach((docSnap) => {
         const data = docSnap.data();
         data.id = docSnap.id;
@@ -499,44 +474,49 @@ onSnapshot(q, (snapshot) => {
         let currentConfig = statusConfig[data.statut] || statusConfig["Planifié"];
         if (isRetard && data.statut === "Planifié") currentConfig = statusConfig["En retard"];
 
-        const listTechs = data.technicien ? data.technicien.split(', ') : ['?'];
-        let avatarsHTML = '';
-        listTechs.forEach(t => { avatarsHTML += `<div class="w-6 h-6 rounded-full bg-slate-200 border border-white flex items-center justify-center text-[10px] font-bold text-slate-600 -ml-1.5 first:ml-0 shadow-sm" title="${t}">${t.charAt(0).toUpperCase()}</div>`; });
+        // CLÉ DE GROUPEMENT (Client + Date + Type)
+        const groupKey = `${data.client}_${data.date}_${data.type}_${isRetard ? 'Retard' : data.statut}`;
+        
+        if (!groupedInterventionsGlobal[groupKey]) {
+            groupedInterventionsGlobal[groupKey] = {
+                client: data.client, dateAffichee: dateAffichee, type: data.type,
+                statut: (isRetard && data.statut === "Planifié") ? "En retard" : data.statut,
+                isRetard: isRetard, config: currentConfig, machines: []
+            };
+        }
+        groupedInterventionsGlobal[groupKey].machines.push(data);
+    });
 
-        const badgeFrequence = data.frequence && data.frequence !== "Ponctuel" ? `<span class="ml-2 text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded border border-slate-200"><i class="fa-solid fa-rotate mr-1"></i>${data.frequence}</span>` : '';
-        const badgeCuratif = data.type === "Curatif" ? `<span class="ml-2 text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded border border-red-200 font-bold">URGENCE</span>` : '';
-        const libelleStatut = (isRetard && data.statut === "Planifié") ? "En retard" : data.statut;
+    // 2. Deuxième boucle : Création des cartes Groupées pour le Dashboard
+    Object.keys(groupedInterventionsGlobal).forEach(key => {
+        const group = groupedInterventionsGlobal[key];
         
         const cardHTML = `
-            <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex items-center justify-between hover:shadow-md transition-shadow">
-                <div class="flex items-center flex-1 cursor-pointer" onclick="ouvrirActionModal('${data.id}')">
-                    <div class="w-2 self-stretch border-l-4" style="background-color: ${currentConfig.bg}; border-color: ${currentConfig.border};"></div>
-                    <div class="p-4 flex-1 flex flex-col sm:flex-row sm:items-center justify-between">
-                        <div class="mb-3 sm:mb-0">
-                            <div class="flex items-center flex-wrap gap-1 mb-1">
-                                <span class="text-xs font-bold text-slate-500 uppercase">${data.client}</span>
-                                <span class="w-1 h-1 rounded-full bg-slate-300 mx-1"></span>
-                                <span class="text-xs text-slate-500 font-medium ${isRetard ? 'text-red-500 font-bold' : ''}">${dateAffichee}</span>
-                                ${badgeFrequence} ${badgeCuratif}
-                            </div>
-                            <h3 class="font-bold text-slate-800 text-sm md:text-base">${data.machine}</h3>
-                            <p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-wrench mr-1"></i> ${data.type}</p>
+            <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex items-center justify-between hover:shadow-md transition-shadow cursor-pointer" onclick="ouvrirModalGroupe('${key}')">
+                <div class="w-2 self-stretch border-l-4" style="background-color: ${group.config.bg}; border-color: ${group.config.border};"></div>
+                <div class="p-4 flex-1 flex items-center justify-between">
+                    <div>
+                        <div class="flex items-center gap-2 mb-1">
+                            <h3 class="font-bold text-slate-800 text-base uppercase">${group.client}</h3>
+                            ${group.isRetard ? '<span class="text-red-500 font-bold text-xs"><i class="fa-solid fa-triangle-exclamation"></i></span>' : ''}
                         </div>
-                        <div class="flex items-center space-x-4">
-                            <div class="flex items-center">${avatarsHTML}</div>
-                            <div class="px-2.5 py-1 rounded-md flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider border border-opacity-20" style="background-color: ${currentConfig.bg}; color: ${currentConfig.text}; border-color: ${currentConfig.border};">
-                                <span>${libelleStatut}</span>
-                            </div>
-                        </div>
+                        <p class="text-sm text-slate-600 font-medium"><i class="fa-solid fa-microchip mr-1 text-slate-400"></i> ${group.machines.length} machine(s) prévue(s)</p>
+                        <p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-calendar-day mr-1"></i> ${group.dateAffichee} &nbsp;|&nbsp; <i class="fa-solid fa-wrench mr-1"></i> ${group.type}</p>
+                    </div>
+                    <div class="px-3 py-1.5 rounded-lg text-xs font-bold uppercase" style="background-color: ${group.config.bg}; color: ${group.config.text}; border-color: ${group.config.border}; border-width: 1px;">
+                        ${group.statut}
                     </div>
                 </div>
-                <button onclick="supprimerInterventionList('${data.id}')" class="p-4 border-l border-slate-100 text-slate-300 hover:bg-red-50 hover:text-red-500 transition-colors"><i class="fa-solid fa-trash-can text-base"></i></button>
             </div>
         `;
 
-        if (data.type === "Curatif" || isRetard || data.statut === "En retard") { if (urgentContainer) urgentContainer.innerHTML += cardHTML; } 
-        else { if (upcomingContainer) upcomingContainer.innerHTML += cardHTML; }
-        if (data.type === "Curatif" && curatifContainer) curatifContainer.innerHTML += cardHTML;
+        // Dispatch dans les bonnes colonnes
+        if (group.type === "Curatif" || group.isRetard || group.statut === "En retard") {
+            if (urgentContainer) urgentContainer.innerHTML += cardHTML;
+        } else {
+            if (upcomingContainer) upcomingContainer.innerHTML += cardHTML;
+        }
+        if (group.type === "Curatif" && curatifContainer) curatifContainer.innerHTML += cardHTML;
     });
 
     if (urgentContainer && urgentContainer.innerHTML === '') urgentContainer.innerHTML = '<p class="text-slate-400 text-sm italic py-2">Super ! Aucune urgence ni retard.</p>';
@@ -549,6 +529,37 @@ onSnapshot(q, (snapshot) => {
     
     updateCalendarEvents();
 });
+
+// --- GESTION DU MODAL DE GROUPE (POUR LE DASHBOARD) ---
+window.ouvrirModalGroupe = function(groupKey) {
+    const group = groupedInterventionsGlobal[groupKey];
+    if (!group) return;
+    
+    document.getElementById('groupModalTitle').textContent = `Machines - ${group.client}`;
+    document.getElementById('groupModalSub').textContent = `${group.dateAffichee} | ${group.type}`;
+    
+    const listContainer = document.getElementById('groupModalList');
+    listContainer.innerHTML = '';
+    
+    group.machines.forEach(m => {
+        listContainer.innerHTML += `
+        <div class="flex justify-between items-center p-3 border-b border-slate-100 hover:bg-slate-50 cursor-pointer transition-colors" onclick="fermerModalGroupe(); ouvrirActionModal('${m.id}')">
+            <div>
+                <p class="font-bold text-slate-800">${m.machine}</p>
+                <p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-user-gear mr-1"></i> ${m.technicien}</p>
+            </div>
+            <i class="fa-solid fa-chevron-right text-slate-300"></i>
+        </div>`;
+    });
+    
+    document.getElementById('groupModal').classList.remove('hidden');
+    document.getElementById('groupModal').classList.add('flex');
+}
+
+window.fermerModalGroupe = function() {
+    document.getElementById('groupModal').classList.add('hidden');
+    document.getElementById('groupModal').classList.remove('flex');
+}
 
 
 // --- AJOUT INTERVENTION (BOUCLIER ANTI-DOUBLONS) ---
