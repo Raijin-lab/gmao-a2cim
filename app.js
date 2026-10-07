@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot, query, orderBy, serverTimestamp, arrayUnion, arrayRemove, increment } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot, query, orderBy, serverTimestamp, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyAvKqfjnjJ4a64QpK2Idt2ms32E0zALFJ4",
@@ -13,32 +13,21 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-let allInterventions = []; let parcClientsDB = {}; let fullCalendarInstance = null; let currentClientFilter = "ALL"; let currentTypeFilter = "ALL"; let stockDB = []; let kitsDB = {}; let tempKitPieces = []; let groupedInterventionsGlobal = {}; let hyperthermDB = [];
+let allInterventions = []; let parcClientsDB = {}; let fullCalendarInstance = null; let currentClientFilter = "ALL"; let currentTypeFilter = "ALL"; let kitsDB = {}; let tempKitPieces = []; let groupedInterventionsGlobal = {}; let hyperthermDB = [];
 
-// ==========================================
-// MOTEUR DU STOCK CENTRAL (PDR)
-// ==========================================
-const qStock = query(collection(db, "stock"), orderBy("nom", "asc"));
-onSnapshot(qStock, (snapshot) => {
-    stockDB = []; const stockContainer = document.getElementById('stock-container'); const selectPieceKit = document.getElementById('selectPieceKit');
-    if(stockContainer) stockContainer.innerHTML = ''; if(selectPieceKit) selectPieceKit.innerHTML = '<option value="" disabled selected>Choisir une pièce...</option>';
-    if (snapshot.empty && stockContainer) { stockContainer.innerHTML = '<p class="text-slate-500 col-span-full">Aucune pièce en stock.</p>'; }
-    snapshot.forEach(docSnap => {
-        const data = docSnap.data(); data.id = docSnap.id; stockDB.push(data);
-        if (selectPieceKit) selectPieceKit.innerHTML += `<option value="${data.id}">${data.ref} - ${data.nom} (Stock: ${data.qte})</option>`; 
-        if (stockContainer) {
-            const isAlert = data.qte <= data.alerte; const colorClass = isAlert ? 'text-red-600 bg-red-50 border-red-200' : 'text-slate-700 bg-white border-slate-100'; const iconAlert = isAlert ? '<i class="fa-solid fa-triangle-exclamation text-red-500 absolute top-4 right-4"></i>' : '';
-            stockContainer.innerHTML += `<div class="p-5 rounded-2xl shadow-sm border ${colorClass} flex flex-col relative transition-all">${iconAlert}<div class="text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">${data.ref}</div><h3 class="font-bold text-base mb-4 pr-6 leading-tight">${data.nom}</h3><div class="mt-auto"><div class="flex justify-between items-end mb-2"><span class="text-3xl font-black ${isAlert ? 'text-red-600' : 'text-brand-600'}">${data.qte}</span><span class="text-[10px] text-slate-400 uppercase font-bold">Seuil: ${data.alerte}</span></div><div class="w-full bg-slate-100 rounded-full h-1.5 mb-4 overflow-hidden"><div class="h-1.5 rounded-full ${isAlert ? 'bg-red-500' : 'bg-brand-500'}" style="width: ${Math.min((data.qte / (data.alerte * 3)) * 100, 100)}%"></div></div><div class="flex space-x-2"><button onclick="ajusterStock('${data.id}', 1)" class="flex-1 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-sm font-bold"><i class="fa-solid fa-plus"></i></button><button onclick="ajusterStock('${data.id}', -1)" class="flex-1 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-sm font-bold"><i class="fa-solid fa-minus"></i></button><button onclick="supprimerStock('${data.id}')" class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-lg"><i class="fa-solid fa-trash-can"></i></button></div></div></div>`;
-        }
+// --- GESTION DU CODE PIN ---
+const CORRECT_PIN = "A2CIM2026";
+if (document.getElementById('pinForm')) {
+    document.getElementById('pinForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (document.getElementById('pinInput').value.trim() === CORRECT_PIN) {
+            const lock = document.getElementById('lockScreen'); lock.classList.add('opacity-0'); setTimeout(() => lock.remove(), 300);
+        } else { document.getElementById('pinError').classList.remove('hidden'); }
     });
-});
-
-if (document.getElementById('formAddStock')) { document.getElementById('formAddStock').addEventListener('submit', async (e) => { e.preventDefault(); await addDoc(collection(db, "stock"), { ref: document.getElementById('newStockRef').value.trim(), nom: document.getElementById('newStockNom').value.trim(), qte: parseInt(document.getElementById('newStockQte').value), alerte: parseInt(document.getElementById('newStockAlerte').value) }); e.target.reset(); }); }
-window.ajusterStock = async function(id, val) { await updateDoc(doc(db, "stock", id), { qte: increment(val) }); };
-window.supprimerStock = async function(id) { if(confirm("Supprimer cette pièce du stock ?")) await deleteDoc(doc(db, "stock", id)); };
+}
 
 // ==========================================
-// MOTEUR DES KITS PDR
+// MOTEUR DES KITS (Nomenclature sans Stock)
 // ==========================================
 const qKits = query(collection(db, "kits"));
 onSnapshot(qKits, (snapshot) => { kitsDB = {}; snapshot.forEach(docSnap => { const data = docSnap.data(); kitsDB[data.client + "_" + data.machine] = { id: docSnap.id, pieces: data.pieces }; }); });
@@ -50,22 +39,27 @@ window.ouvrirModalKit = function(client, machine) {
 }
 window.fermerKitModal = function() { document.getElementById('kitModal').classList.add('hidden'); document.getElementById('kitModal').classList.remove('flex'); }
 window.ajouterPieceAuKitTemp = function() {
-    const idPiece = document.getElementById('selectPieceKit').value; const qte = parseInt(document.getElementById('qtePieceKit').value);
-    if (!idPiece || qte < 1) return; const pieceDb = stockDB.find(p => p.id === idPiece); if (!pieceDb) return;
-    const existingIndex = tempKitPieces.findIndex(p => p.idPiece === idPiece);
-    if (existingIndex >= 0) { tempKitPieces[existingIndex].qte = qte; } else { tempKitPieces.push({ idPiece: idPiece, nom: pieceDb.nom, ref: pieceDb.ref, qte: qte }); }
+    const ref = document.getElementById('kitNewRef').value.trim() || "N/A";
+    const nom = document.getElementById('kitNewNom').value.trim();
+    const qte = parseInt(document.getElementById('qtePieceKit').value);
+    if (!nom || qte < 1) return alert("Veuillez saisir au moins la désignation et la quantité.");
+    
+    const existingIndex = tempKitPieces.findIndex(p => p.ref === ref && p.nom === nom);
+    if (existingIndex >= 0) { tempKitPieces[existingIndex].qte = qte; } else { tempKitPieces.push({ ref: ref, nom: nom, qte: qte }); }
+    
+    document.getElementById('kitNewRef').value = ''; document.getElementById('kitNewNom').value = ''; document.getElementById('qtePieceKit').value = '1';
     afficherPiecesKitTemp();
 }
-window.retirerPieceDuKitTemp = function(idPiece) { tempKitPieces = tempKitPieces.filter(p => p.idPiece !== idPiece); afficherPiecesKitTemp(); }
+window.retirerPieceDuKitTemp = function(ref, nom) { tempKitPieces = tempKitPieces.filter(p => !(p.ref === ref && p.nom === nom)); afficherPiecesKitTemp(); }
 function afficherPiecesKitTemp() {
     const ul = document.getElementById('listePiecesKitTemp'); ul.innerHTML = '';
     if (tempKitPieces.length === 0) { ul.innerHTML = '<li class="text-sm text-slate-400 italic text-center py-2">Aucune pièce associée.</li>'; return; }
-    tempKitPieces.forEach(p => { ul.innerHTML += `<li class="flex justify-between items-center bg-slate-50 border border-slate-100 p-2 rounded text-sm"><span><strong>${p.qte}x</strong> ${p.ref} - ${p.nom}</span><button onclick="retirerPieceDuKitTemp('${p.idPiece}')" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-xmark"></i></button></li>`; });
+    tempKitPieces.forEach(p => { ul.innerHTML += `<li class="flex justify-between items-center bg-slate-50 border border-slate-100 p-2 rounded text-sm"><span><strong>${p.qte}x</strong> [${p.ref}] ${p.nom}</span><button onclick="retirerPieceDuKitTemp('${p.ref}', '${p.nom}')" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-xmark"></i></button></li>`; });
 }
 window.sauvegarderKitFinal = async function() {
     const client = document.getElementById('currentKitClient').value; const machine = document.getElementById('currentKitMachine').value; const existingKit = kitsDB[client + "_" + machine];
     if (existingKit) { await updateDoc(doc(db, "kits", existingKit.id), { pieces: tempKitPieces }); } else { await addDoc(collection(db, "kits"), { client: client, machine: machine, pieces: tempKitPieces }); }
-    alert("Le kit a été enregistré !"); fermerKitModal();
+    alert("Nomenclature enregistrée !"); fermerKitModal();
 }
 
 // ==========================================
@@ -114,33 +108,42 @@ window.supprimerMachineParc = async function(docId, nomMachine) { if (confirm(`S
 window.supprimerClientParc = async function(docId) { if (confirm(`Attention : supprimer ce client ?`)) await deleteDoc(doc(db, "clients", docId)); };
 if (document.getElementById('formAddClient')) { document.getElementById('formAddClient').addEventListener('submit', async (e) => { e.preventDefault(); const input = document.getElementById('newClientName'); if (!input.value.trim()) return; await addDoc(collection(db, "clients"), { nom: input.value.trim(), machines: [] }); input.value = ''; }); }
 
-
 // ==========================================
-// 3. LE CERVEAU TEMPOREL HYPERTHERM
+// LE CERVEAU TEMPOREL HYPERTHERM
 // ==========================================
-const HT_RULES = {
-    "6M": { days: 182, parts: [{ ref: "027664", nom: "Filtre à air principal" }, { ref: "028872", nom: "Coolant 70/30 (Liquide refroidissement)" }, { ref: "027665", nom: "Filtre liquide de refroidissement" }, { ref: "428383", nom: "Kit d'entretien torche" }] },
-    "12M": { days: 365, parts: [{ ref: "003149", nom: "Relais arc pilote" }, { ref: "003150", nom: "Contacteur principal" }, { ref: "428144", nom: "Corps de torche (Main body)" }] },
-    "24M": { days: 730, parts: [{ ref: "428384", nom: "Kit pompe à eau (Coolant pump kit)" }, { ref: "428385", nom: "Faisceaux de torche (Torch leads)" }] },
-    "36M": { days: 1095, parts: [{ ref: "027666", nom: "Ventilateurs de refroidissement" }, { ref: "027667", nom: "Moteur de pompe hydraulique" }] }
-};
+function getHTRules(modele) {
+    const isStandard = (modele === "HPR260" || modele === "MAXPRO200");
+    if (isStandard) {
+        return {
+            "6M": { days: 182, parts: [{ ref: "027664", nom: "Filtre à air principal" }, { ref: "028872", nom: "Coolant (Liquide ref.)" }, { ref: "027665", nom: "Filtre liquide ref." }, { ref: "128879", nom: "Kit entretien torche Std" }] },
+            "12M": { days: 365, parts: [{ ref: "003149", nom: "Relais arc pilote" }, { ref: "003150", nom: "Contacteur principal" }, { ref: "220162", nom: "Corps de torche (Standard)" }] },
+            "24M": { days: 730, parts: [{ ref: "023274", nom: "Pompe à eau" }, { ref: "228292", nom: "Faisceaux de torche Std" }] },
+            "36M": { days: 1095, parts: [{ ref: "027666", nom: "Ventilateurs" }, { ref: "027667", nom: "Moteur pompe" }] }
+        };
+    } else {
+        return {
+            "6M": { days: 182, parts: [{ ref: "027664", nom: "Filtre à air principal" }, { ref: "028872", nom: "Coolant 70/30" }, { ref: "027665", nom: "Filtre liquide ref." }, { ref: "428383", nom: "Kit d'entretien torche XD/XPR" }] },
+            "12M": { days: 365, parts: [{ ref: "003149", nom: "Relais arc pilote" }, { ref: "003150", nom: "Contacteur principal" }, { ref: "428144", nom: "Corps de torche XD/XPR" }] },
+            "24M": { days: 730, parts: [{ ref: "428384", nom: "Kit pompe à eau" }, { ref: "428385", nom: "Faisceaux de torche (Leads)" }] },
+            "36M": { days: 1095, parts: [{ ref: "027666", nom: "Ventilateurs" }, { ref: "027667", nom: "Moteur hydraulique" }] }
+        };
+    }
+}
 
-// Fonction mathématique pour calculer la PROCHAINE vraie date (ignorer le passé)
-function getNextHyperthermCycle(instDateStr, shifts) {
+function getNextHyperthermCycle(instDateStr, shifts, modele) {
     const today = new Date(); today.setHours(0,0,0,0);
     const instDate = new Date(instDateStr); instDate.setHours(0,0,0,0);
+    const rules = getHTRules(modele);
     
-    // Si la machine est installée dans le futur, on prend 6 mois après son installation
     if (instDate > today) {
         let nextDateObj = new Date(instDate); nextDateObj.setDate(nextDateObj.getDate() + Math.round(182 / shifts));
-        return { cycleType: "6M", dateObj: nextDateObj, parts: HT_RULES["6M"].parts };
+        return { cycleType: "6M", dateObj: nextDateObj, parts: rules["6M"].parts };
     }
 
     let diffTime = today.getTime() - instDate.getTime();
     let diffDays = Math.ceil(diffTime / (1000 * 3600 * 24));
     let effectiveAgeDays = diffDays * shifts;
     
-    // Trouver le prochain palier multiple de 182 jours
     let nextMilestone = Math.ceil(effectiveAgeDays / 182) * 182;
     if (nextMilestone === 0 || (nextMilestone/shifts) <= diffDays) { nextMilestone += 182; }
 
@@ -152,7 +155,7 @@ function getNextHyperthermCycle(instDateStr, shifts) {
     const nextDateObj = new Date(instDate);
     nextDateObj.setDate(nextDateObj.getDate() + Math.round(nextMilestone / shifts));
     
-    return { cycleType: cycleType, dateObj: nextDateObj, parts: HT_RULES[cycleType].parts };
+    return { cycleType: cycleType, dateObj: nextDateObj, parts: rules[cycleType].parts };
 }
 
 const qHT = query(collection(db, "hypertherm"));
@@ -162,9 +165,10 @@ onSnapshot(qHT, (snapshot) => {
     snapshot.forEach(docSnap => { const data = docSnap.data(); data.id = docSnap.id; hyperthermDB.push(data); });
     hyperthermDB.sort((a, b) => new Date(a.dateInstallation) - new Date(b.dateInstallation));
 
+    const now = new Date();
     hyperthermDB.forEach(data => {
         if (container) {
-            const cycleInfo = getNextHyperthermCycle(data.dateInstallation, data.shifts || 1);
+            const cycleInfo = getNextHyperthermCycle(data.dateInstallation, data.shifts || 1, data.modele);
             const instDateStr = new Date(data.dateInstallation).toLocaleDateString('fr-FR');
             const nextDateStr = cycleInfo.dateObj.toLocaleDateString('fr-FR');
             
@@ -186,26 +190,21 @@ if (document.getElementById('formAddHypertherm')) {
             const modele = document.getElementById('htModel').value; const dateInst = document.getElementById('htDateInst').value; const shifts = parseInt(document.getElementById('htShifts').value);
             if (!client || !machine) { alert("Sélectionnez un client et une machine."); return; }
             
-            // 1. Sauvegarde l'entité
             await addDoc(collection(db, "hypertherm"), { client: client, machine: machine, modele: modele, dateInstallation: dateInst, shifts: shifts, timestamp: serverTimestamp() });
             
-            // 2. Synchronisation Automatique du Calendrier (On calcule la PROCHAINE date)
-            const cycleInfo = getNextHyperthermCycle(dateInst, shifts);
-            
-            // 3. Création automatique de l'intervention avec le tag "Hypertherm"
+            const cycleInfo = getNextHyperthermCycle(dateInst, shifts, modele);
             await addDoc(collection(db, "interventions"), { client: client, machine: machine, date: cycleInfo.dateObj.toISOString().split('T')[0], type: "Préventif", technicien: "Équipe A2CIM", statut: "Planifié", frequence: "Hypertherm", timestamp: serverTimestamp() });
             
-            // 4. Création automatique du Kit PDR
-            let newKit = []; cycleInfo.parts.forEach(p => { const pStock = stockDB.find(s => s.ref === p.ref); if(pStock) newKit.push({ idPiece: pStock.id, nom: pStock.nom, ref: pStock.ref, qte: 1 }); });
+            let newKit = cycleInfo.parts.map(p => ({ ref: p.ref, nom: p.nom, qte: 1 }));
             const existingKit = kitsDB[client + "_" + machine];
             if (existingKit) { await updateDoc(doc(db, "kits", existingKit.id), { pieces: newKit }); } else { await addDoc(collection(db, "kits"), { client: client, machine: machine, pieces: newKit }); }
             
             e.target.reset(); document.getElementById('htMachine').innerHTML = '<option value="" disabled selected>Machine...</option>';
-            alert(`✅ ${modele} surveillé pour ${client}.\nL'intervention préventive ${cycleInfo.cycleType} a été ajoutée au calendrier pour le ${cycleInfo.dateObj.toLocaleDateString('fr-FR')} !`);
+            alert(`✅ ${modele} surveillé pour ${client}.\n\n📅 IMPORTANT :\nLe système a calculé la prochaine vraie révision au : ${cycleInfo.dateObj.toLocaleDateString('fr-FR')}.`);
         } catch(error) { console.error(error); alert("Erreur : " + error.message); } finally { btnSubmit.innerHTML = origTxt; btnSubmit.disabled = false; }
     });
 }
-window.supprimerHypertherm = async function(id) { if (confirm("Arrêter la surveillance de ce générateur Hypertherm ?")) await deleteDoc(doc(db, "hypertherm", id)); };
+window.supprimerHypertherm = async function(id) { if (confirm("Arrêter la surveillance ?")) await deleteDoc(doc(db, "hypertherm", id)); };
 
 
 // ==========================================
@@ -241,7 +240,7 @@ const typeFilterSelect = document.getElementById('calendarTypeFilter'); if (type
 document.addEventListener('DOMContentLoaded', initCalendar);
 
 // ==========================================
-// MODAL D'ACTION (NOUVEAU BOUTON FICHE)
+// MODAL D'ACTION INDIVIDUEL (NO STOCK)
 // ==========================================
 const actionModal = document.getElementById('eventActionModal');
 
@@ -256,19 +255,17 @@ window.ouvrirActionModal = function(eventOrId) {
     document.getElementById('actionModalTitle').textContent = title; document.getElementById('actionModalSub').textContent = `${props.client} | ${props.frequence}`;
     document.getElementById('actionEventId').value = id; document.getElementById('actionEventDate').value = dateVal || ""; document.getElementById('actionEventClient').value = props.client; document.getElementById('actionEventType').value = props.type;
     
-    // GESTION DES BOUTONS SELON STATUT
     document.getElementById('btnSetEnCours').style.display = (props.statut === "Planifié") ? "block" : "none"; 
     document.getElementById('btnSetTermine').style.display = (props.statut !== "Terminé") ? "block" : "none";
     document.getElementById('deleteOptionsDiv').style.display = (props.statut !== "Terminé") ? "block" : "none";
     
-    // NOUVEAU BOUTON : Si Terminé, on montre "Voir Fiche" et on cache le reste
     const btnVoirFiche = document.getElementById('btnVoirFiche');
     if (props.statut === "Terminé") { btnVoirFiche.style.display = "block"; } else { btnVoirFiche.style.display = "none"; }
     
     const encartPDR = document.getElementById('actionModalPDR'); const ulPDR = document.getElementById('actionModalPDRList'); ulPDR.innerHTML = '';
     const theKit = kitsDB[props.client + "_" + props.machine];
     if (props.type === "Préventif" && theKit && theKit.pieces.length > 0) {
-        theKit.pieces.forEach(p => { ulPDR.innerHTML += `<li><span class="font-black bg-white text-brand-700 px-2 py-0.5 rounded mr-2 border border-brand-100">${p.qte}x</span> ${p.ref} - ${p.nom}</li>`; });
+        theKit.pieces.forEach(p => { ulPDR.innerHTML += `<li><span class="font-black bg-white text-brand-700 px-2 py-0.5 rounded mr-2 border border-brand-100">${p.qte}x</span> [${p.ref}] ${p.nom}</li>`; });
         encartPDR.classList.remove('hidden');
     } else { encartPDR.classList.add('hidden'); }
     actionModal.classList.remove('hidden'); actionModal.classList.add('flex');
@@ -287,93 +284,64 @@ document.getElementById('btnDeleteGroup').addEventListener('click', async () => 
 document.getElementById('btnSetEnCours').addEventListener('click', async () => { await updateDoc(doc(db, "interventions", document.getElementById('actionEventId').value), { statut: "En cours" }); fermerActionModal(); });
 
 // ==========================================
-// LOGIQUE DE PRÉ-REMPLISSAGE DE FICHE
+// CLÔTURE D'UNE MACHINE INDIVIDUELLE
 // ==========================================
-function preRemplirFiche(interventionData, isNouvelleFin) {
+function preRemplirFicheIndividuelle(interventionData) {
     const theKit = kitsDB[interventionData.client + "_" + interventionData.machine];
-    document.getElementById('input_client').value = interventionData.client;
-    document.getElementById('input_machine').value = interventionData.machine;
-    document.getElementById('input_date').value = interventionData.date; // Met la date de l'intervention
+    document.getElementById('input_client').value = interventionData.client; document.getElementById('input_machine').value = interventionData.machine; document.getElementById('input_date').value = interventionData.date; 
     
     if (interventionData.type === "Préventif") {
-        document.getElementById('input_forfait_ref').value = "PREV";
-        document.getElementById('input_forfait_nom').value = "SAV-Préventif";
-        document.getElementById('input_forfait_diag').value = "Maintenance Préventive " + interventionData.machine;
-        
-        let texteTravaux = `Maintenance préventive effectuée sur ${interventionData.machine}.\n`;
+        document.getElementById('input_forfait_ref').value = "PREV"; document.getElementById('input_forfait_nom').value = "SAV-Préventif"; document.getElementById('input_forfait_diag').value = "Maintenance Préventive de l'équipement";
+        const isHT = hyperthermDB.find(h => h.client === interventionData.client && h.machine === interventionData.machine);
+        let equipementType = isHT ? `l'équipement de découpe ${interventionData.machine} (Générateur ${isHT.modele})` : `l'équipement ${interventionData.machine}`;
+        let texteTravaux = `Dans le cadre du contrat de maintenance préventive A2CIM, une intervention complète et rigoureuse a été réalisée sur ${equipementType}.\n\n📌 CONTRÔLES EFFECTUÉS :\n- Nettoyage et dépoussiérage intégral de la source et de la console.\n- Vérification des tensions, des sécurités et de l'état des connectiques.\n- Contrôle des pressions de fluides et purge des circuits.\n`;
         if (theKit && theKit.pieces.length > 0) {
-            texteTravaux += "\nRemplacement des consommables / PDR :\n";
-            theKit.pieces.forEach(p => { texteTravaux += `- ${p.qte}x [${p.ref}] ${p.nom}\n`; });
+            texteTravaux += `\n⚙️ REMPLACEMENT SYSTÉMATIQUE DES CONSOMMABLES (Préconisation Constructeur) :\n`;
+            theKit.pieces.forEach(p => { texteTravaux += `✓ ${p.qte}x ${p.nom} (Réf: ${p.ref})\n`; });
         }
+        texteTravaux += `\n✅ Résultat : Équipement remis en production avec paramètres nominaux validés.`;
         document.getElementById('input_travaux').value = texteTravaux;
     } else {
-        document.getElementById('input_forfait_ref').value = "DEPAN";
-        document.getElementById('input_forfait_nom').value = "SAV-Depannage";
-        document.getElementById('input_forfait_diag').value = "Diagnostic " + interventionData.machine;
-        document.getElementById('input_travaux').value = ""; 
+        document.getElementById('input_forfait_ref').value = "DEPAN"; document.getElementById('input_forfait_nom').value = "SAV-Depannage"; document.getElementById('input_forfait_diag').value = "Diagnostic curatif en cours"; document.getElementById('input_travaux').value = ""; 
     }
 
-    const techListContainer = document.getElementById('fiche-tech-list');
-    techListContainer.innerHTML = '';
+    const techListContainer = document.getElementById('fiche-tech-list'); techListContainer.innerHTML = '';
     const techs = interventionData.technicien ? interventionData.technicien.split(', ') : [];
-    techs.forEach(t => {
-        if(t && t.trim() !== '?') {
-            techListContainer.innerHTML += `<div class="flex items-center gap-3 mb-2 tech-row"><input type="text" class="tech-name w-1/2 p-2 border border-slate-300 rounded-lg text-sm bg-white font-bold" value="${t}"><input type="number" class="tech-qty-val w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white" placeholder="Qté" value="1" step="0.5"><select class="tech-qty-unit w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white"><option value="Heure(s)">Heure(s)</option><option value="Jour(s)">Jour(s)</option></select><button type="button" class="text-red-500 hover:text-red-700 font-bold px-2" onclick="this.parentElement.remove()">X</button></div>`;
-        }
-    });
+    techs.forEach(t => { if(t && t.trim() !== '?') { techListContainer.innerHTML += `<div class="flex items-center gap-3 mb-2 tech-row"><input type="text" class="tech-name w-1/2 p-2 border border-slate-300 rounded-lg text-sm bg-white font-bold" value="${t}"><input type="number" class="tech-qty-val w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white" placeholder="Qté" value="1" step="0.5"><select class="tech-qty-unit w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white"><option value="Heure(s)">Heure(s)</option><option value="Jour(s)">Jour(s)</option></select><button type="button" class="text-red-500 hover:text-red-700 font-bold px-2" onclick="this.parentElement.remove()">X</button></div>`; } });
 
-    fermerActionModal();
-    document.querySelector('a[data-view="fiches"]').click();
+    fermerActionModal(); document.querySelector('a[data-view="fiches"]').click();
 }
 
-// 1. Bouton "Voir la Fiche" (Pour les archives Terminées - SANS décrémenter le stock)
-document.getElementById('btnVoirFiche').addEventListener('click', () => {
-    const id = document.getElementById('actionEventId').value; const interventionData = allInterventions.find(i => i.id === id);
-    if (interventionData) preRemplirFiche(interventionData, false);
-});
+document.getElementById('btnVoirFiche').addEventListener('click', () => { const id = document.getElementById('actionEventId').value; const intv = allInterventions.find(i => i.id === id); if (intv) preRemplirFicheIndividuelle(intv); });
 
-// 2. Bouton "Valider et Créer Fiche" (Pour clôturer - AVEC décrémentation stock et récurrence)
 document.getElementById('btnSetTermine').addEventListener('click', async () => {
-    const btnTermine = document.getElementById('btnSetTermine'); const originalContent = btnTermine.innerHTML;
-    btnTermine.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Auto-Génération...'; btnTermine.disabled = true;
-    const id = document.getElementById('actionEventId').value; const interventionData = allInterventions.find(i => i.id === id);
-    if (!interventionData) { fermerActionModal(); return; }
+    const btnTermine = document.getElementById('btnSetTermine'); const orig = btnTermine.innerHTML; btnTermine.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Auto-Génération...'; btnTermine.disabled = true;
+    const id = document.getElementById('actionEventId').value; const intv = allInterventions.find(i => i.id === id);
+    if (!intv) { fermerActionModal(); return; }
 
     try {
-        const theKit = kitsDB[interventionData.client + "_" + interventionData.machine];
-        if (interventionData.type === "Préventif" && theKit && theKit.pieces.length > 0) {
-            for (const p of theKit.pieces) { await updateDoc(doc(db, "stock", p.idPiece), { qte: increment(-p.qte) }); }
-        }
-
         await updateDoc(doc(db, "interventions", id), { statut: "Terminé" });
-
-        const freq = interventionData.frequence || "Ponctuel";
+        const freq = intv.frequence || "Ponctuel";
         if (freq === "Hypertherm") {
-            // RECALCUL INFINI HYPERTHERM
-            const htMachine = hyperthermDB.find(h => h.client === interventionData.client && h.machine === interventionData.machine);
+            const htMachine = hyperthermDB.find(h => h.client === intv.client && h.machine === intv.machine);
             if(htMachine) {
-                const cycleInfo = getNextHyperthermCycle(htMachine.dateInstallation, htMachine.shifts || 1);
-                await addDoc(collection(db, "interventions"), { client: interventionData.client, machine: interventionData.machine, date: cycleInfo.dateObj.toISOString().split('T')[0], type: "Préventif", technicien: "Équipe A2CIM", statut: "Planifié", frequence: "Hypertherm", timestamp: serverTimestamp() });
-                
-                // Maj du kit PDR auto
-                let newKit = []; cycleInfo.parts.forEach(p => { const pStock = stockDB.find(s => s.ref === p.ref); if(pStock) newKit.push({ idPiece: pStock.id, nom: pStock.nom, ref: pStock.ref, qte: 1 }); });
+                const cycleInfo = getNextHyperthermCycle(htMachine.dateInstallation, htMachine.shifts || 1, htMachine.modele);
+                await addDoc(collection(db, "interventions"), { client: intv.client, machine: intv.machine, date: cycleInfo.dateObj.toISOString().split('T')[0], type: "Préventif", technicien: "Équipe A2CIM", statut: "Planifié", frequence: "Hypertherm", timestamp: serverTimestamp() });
+                let newKit = cycleInfo.parts.map(p => ({ ref: p.ref, nom: p.nom, qte: 1 }));
+                const theKit = kitsDB[intv.client + "_" + intv.machine];
                 if (theKit) { await updateDoc(doc(db, "kits", theKit.id), { pieces: newKit }); } else { await addDoc(collection(db, "kits"), { client: htMachine.client, machine: htMachine.machine, pieces: newKit }); }
             }
         } else if (freq !== "Ponctuel") {
-            // RÉCURRENCE NORMALE
-            const dateObj = new Date(interventionData.date);
+            const dateObj = new Date(intv.date);
             if (freq === "Mensuel") dateObj.setMonth(dateObj.getMonth() + 1); else if (freq === "Trimestriel") dateObj.setMonth(dateObj.getMonth() + 3); else if (freq === "Semestriel") dateObj.setMonth(dateObj.getMonth() + 6); else if (freq === "Annuel") dateObj.setFullYear(dateObj.getFullYear() + 1);
-            await addDoc(collection(db, "interventions"), { client: interventionData.client, machine: interventionData.machine, date: dateObj.toISOString().split('T')[0], type: interventionData.type, technicien: interventionData.technicien, statut: "Planifié", frequence: freq, timestamp: serverTimestamp() });
+            await addDoc(collection(db, "interventions"), { client: intv.client, machine: intv.machine, date: dateObj.toISOString().split('T')[0], type: intv.type, technicien: intv.technicien, statut: "Planifié", frequence: freq, timestamp: serverTimestamp() });
         }
-
-        preRemplirFiche(interventionData, true);
-
-    } catch (e) { console.error(e); alert("Erreur lors de la validation."); } 
-    finally { btnTermine.innerHTML = originalContent; btnTermine.disabled = false; }
+        preRemplirFicheIndividuelle(intv);
+    } catch (e) { console.error(e); alert("Erreur."); } finally { btnTermine.innerHTML = orig; btnTermine.disabled = false; }
 });
 
 // ==========================================
-// SYNCHRO TABLEAU DE BORD (GROUPÉ)
+// SYNCHRO TABLEAU DE BORD (GROUPÉ) & CLOTURE MULTI-MACHINES
 // ==========================================
 const q = query(collection(db, "interventions"), orderBy("date", "asc"));
 onSnapshot(q, (snapshot) => {
@@ -417,10 +385,92 @@ window.ouvrirModalGroupe = function(groupKey) {
     const group = groupedInterventionsGlobal[groupKey]; if (!group) return;
     document.getElementById('groupModalTitle').textContent = `Machines - ${group.client}`; document.getElementById('groupModalSub').textContent = `${group.dateAffichee} | ${group.type}`;
     const listContainer = document.getElementById('groupModalList'); listContainer.innerHTML = '';
-    group.machines.forEach(m => { listContainer.innerHTML += `<div class="flex justify-between items-center p-3 border-b border-slate-100 hover:bg-slate-50 cursor-pointer transition-colors" onclick="fermerModalGroupe(); ouvrirActionModal('${m.id}')"><div><p class="font-bold text-slate-800">${m.machine}</p><p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-user-gear mr-1"></i> ${m.technicien}</p></div><i class="fa-solid fa-chevron-right text-slate-300"></i></div>`; });
+    
+    let htmlContent = '<div class="space-y-2 mb-4">';
+    group.machines.forEach(m => { htmlContent += `<div class="flex justify-between items-center p-3 border border-slate-100 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors" onclick="fermerModalGroupe(); ouvrirActionModal('${m.id}')"><div><p class="font-bold text-slate-800">${m.machine}</p><p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-user-gear mr-1"></i> ${m.technicien}</p></div><i class="fa-solid fa-chevron-right text-slate-300"></i></div>`; });
+    htmlContent += '</div>';
+
+    // NOUVEAU BOUTON : CLÔTURE GLOBALE MULTI-MACHINES
+    htmlContent += `<div class="mt-auto pt-4 border-t border-slate-200">
+        <button id="btnValiderGroupe" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-xl shadow-md transition-transform transform hover:-translate-y-1" onclick="validerGroupeEtFiche('${groupKey}')">
+            <i class="fa-solid fa-file-signature mr-2"></i> Clôturer les ${group.machines.length} machines & Rédiger la Fiche
+        </button>
+    </div>`;
+
+    listContainer.innerHTML = htmlContent;
     document.getElementById('groupModal').classList.remove('hidden'); document.getElementById('groupModal').classList.add('flex');
 }
 window.fermerModalGroupe = function() { document.getElementById('groupModal').classList.add('hidden'); document.getElementById('groupModal').classList.remove('flex'); }
+
+// LA RÉVOLUTION MULTI-MACHINES
+window.validerGroupeEtFiche = async function(groupKey) {
+    const group = groupedInterventionsGlobal[groupKey]; if (!group) return;
+    const btn = document.getElementById('btnValiderGroupe'); const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Consolidation...'; btn.disabled = true;
+
+    try {
+        let allParts = {}; let machinesList = []; let allTechs = new Set();
+
+        for (const m of group.machines) {
+            machinesList.push(m.machine);
+            if (m.technicien) m.technicien.split(', ').forEach(t => allTechs.add(t));
+            
+            await updateDoc(doc(db, "interventions", m.id), { statut: "Terminé" });
+
+            const freq = m.frequence || "Ponctuel";
+            if (freq === "Hypertherm") {
+                const htMachine = hyperthermDB.find(h => h.client === m.client && h.machine === m.machine);
+                if (htMachine) {
+                    const cycleInfo = getNextHyperthermCycle(htMachine.dateInstallation, htMachine.shifts || 1, htMachine.modele);
+                    await addDoc(collection(db, "interventions"), { client: m.client, machine: m.machine, date: cycleInfo.dateObj.toISOString().split('T')[0], type: "Préventif", technicien: m.technicien, statut: "Planifié", frequence: "Hypertherm", timestamp: serverTimestamp() });
+                    cycleInfo.parts.forEach(p => { if (!allParts[p.ref]) allParts[p.ref] = { nom: p.nom, qte: 0 }; allParts[p.ref].qte += 1; });
+                    
+                    let newKit = cycleInfo.parts.map(p => ({ ref: p.ref, nom: p.nom, qte: 1 }));
+                    const theKit = kitsDB[m.client + "_" + m.machine];
+                    if (theKit) { await updateDoc(doc(db, "kits", theKit.id), { pieces: newKit }); } else { await addDoc(collection(db, "kits"), { client: htMachine.client, machine: htMachine.machine, pieces: newKit }); }
+                }
+            } else {
+                if (freq !== "Ponctuel") {
+                    const dateObj = new Date(m.date);
+                    if (freq === "Mensuel") dateObj.setMonth(dateObj.getMonth() + 1); else if (freq === "Trimestriel") dateObj.setMonth(dateObj.getMonth() + 3); else if (freq === "Semestriel") dateObj.setMonth(dateObj.getMonth() + 6); else if (freq === "Annuel") dateObj.setFullYear(dateObj.getFullYear() + 1);
+                    await addDoc(collection(db, "interventions"), { client: m.client, machine: m.machine, date: dateObj.toISOString().split('T')[0], type: m.type, technicien: m.technicien, statut: "Planifié", frequence: freq, timestamp: serverTimestamp() });
+                }
+                const theKit = kitsDB[m.client + "_" + m.machine];
+                if (theKit && m.type === "Préventif") {
+                    theKit.pieces.forEach(p => { if (!allParts[p.ref]) allParts[p.ref] = { nom: p.nom, qte: 0 }; allParts[p.ref].qte += Number(p.qte); });
+                }
+            }
+        }
+
+        document.getElementById('input_client').value = group.client;
+        document.getElementById('input_machine').value = `${group.machines.length} machine(s) (Voir détail)`;
+        document.getElementById('input_date').value = new Date().toISOString().split('T')[0];
+
+        if (group.type === "Préventif") {
+            document.getElementById('input_forfait_ref').value = "PREV"; document.getElementById('input_forfait_nom').value = "SAV-Préventif"; document.getElementById('input_forfait_diag').value = "Maintenance Préventive Parc";
+            let texteTravaux = `Dans le cadre du contrat de maintenance préventive A2CIM, une intervention a été réalisée sur un parc de ${group.machines.length} équipement(s).\n\n`;
+            texteTravaux += `Machines concernées :\n- ${machinesList.join('\n- ')}\n\n`;
+            texteTravaux += `📌 CONTRÔLES EFFECTUÉS SUR CHAQUE MACHINE :\n- Nettoyage et dépoussiérage intégral.\n- Vérification des tensions, des sécurités et connectiques.\n- Contrôle des pressions et purge des circuits.\n`;
+            
+            const partsKeys = Object.keys(allParts);
+            if (partsKeys.length > 0) {
+                texteTravaux += `\n⚙️ REMPLACEMENT GLOBAL DES CONSOMMABLES (Total du parc) :\n`;
+                partsKeys.forEach(ref => { texteTravaux += `✓ ${allParts[ref].qte}x ${allParts[ref].nom} (Réf: ${ref})\n`; });
+            }
+            texteTravaux += `\n✅ Résultat : Équipements remis en production.`;
+            document.getElementById('input_travaux').value = texteTravaux;
+        } else {
+            document.getElementById('input_forfait_ref').value = "DEPAN"; document.getElementById('input_forfait_nom').value = "SAV-Depannage"; document.getElementById('input_forfait_diag').value = "Intervention Curative Multi-machines"; 
+            document.getElementById('input_travaux').value = `Machines concernées : ${machinesList.join(', ')}\n\nDétail des travaux : `;
+        }
+
+        const techListContainer = document.getElementById('fiche-tech-list'); techListContainer.innerHTML = '';
+        allTechs.forEach(t => { if(t && t !== '?') { techListContainer.innerHTML += `<div class="flex items-center gap-3 mb-2 tech-row"><input type="text" class="tech-name w-1/2 p-2 border border-slate-300 rounded-lg text-sm bg-white font-bold" value="${t}"><input type="number" class="tech-qty-val w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white" placeholder="Qté" value="1" step="0.5"><select class="tech-qty-unit w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white"><option value="Heure(s)">Heure(s)</option><option value="Jour(s)">Jour(s)</option></select><button type="button" class="text-red-500 hover:text-red-700 font-bold px-2" onclick="this.parentElement.remove()">X</button></div>`; } });
+
+        fermerModalGroupe(); document.querySelector('a[data-view="fiches"]').click();
+
+    } catch (e) { console.error(e); alert("Erreur : " + e.message); } finally { btn.innerHTML = orig; btn.disabled = false; }
+};
 
 // --- AJOUT INTERVENTION (BOUCLIER ANTI-DOUBLONS) ---
 const modal = document.getElementById('addInterventionModal');
@@ -550,5 +600,4 @@ window.prepareAndPrint = function() {
     }, 500);
 };
 
-// PWA
 if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(err => console.error('Erreur SW', err)); }); }
