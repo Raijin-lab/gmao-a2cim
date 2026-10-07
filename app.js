@@ -37,7 +37,6 @@ if (document.getElementById('formAddStock')) { document.getElementById('formAddS
 window.ajusterStock = async function(id, val) { await updateDoc(doc(db, "stock", id), { qte: increment(val) }); };
 window.supprimerStock = async function(id) { if(confirm("Supprimer cette pièce du stock ?")) await deleteDoc(doc(db, "stock", id)); };
 
-
 // ==========================================
 // MOTEUR DES KITS PDR
 // ==========================================
@@ -117,7 +116,7 @@ if (document.getElementById('formAddClient')) { document.getElementById('formAdd
 
 
 // ==========================================
-// EXPERTISE HYPERTHERM
+// 3. LE CERVEAU TEMPOREL HYPERTHERM
 // ==========================================
 const HT_RULES = {
     "6M": { days: 182, parts: [{ ref: "027664", nom: "Filtre à air principal" }, { ref: "028872", nom: "Coolant 70/30 (Liquide refroidissement)" }, { ref: "027665", nom: "Filtre liquide de refroidissement" }, { ref: "428383", nom: "Kit d'entretien torche" }] },
@@ -126,33 +125,86 @@ const HT_RULES = {
     "36M": { days: 1095, parts: [{ ref: "027666", nom: "Ventilateurs de refroidissement" }, { ref: "027667", nom: "Moteur de pompe hydraulique" }] }
 };
 
+// Fonction mathématique pour calculer la PROCHAINE vraie date (ignorer le passé)
+function getNextHyperthermCycle(instDateStr, shifts) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const instDate = new Date(instDateStr); instDate.setHours(0,0,0,0);
+    
+    // Si la machine est installée dans le futur, on prend 6 mois après son installation
+    if (instDate > today) {
+        let nextDateObj = new Date(instDate); nextDateObj.setDate(nextDateObj.getDate() + Math.round(182 / shifts));
+        return { cycleType: "6M", dateObj: nextDateObj, parts: HT_RULES["6M"].parts };
+    }
+
+    let diffTime = today.getTime() - instDate.getTime();
+    let diffDays = Math.ceil(diffTime / (1000 * 3600 * 24));
+    let effectiveAgeDays = diffDays * shifts;
+    
+    // Trouver le prochain palier multiple de 182 jours
+    let nextMilestone = Math.ceil(effectiveAgeDays / 182) * 182;
+    if (nextMilestone === 0 || (nextMilestone/shifts) <= diffDays) { nextMilestone += 182; }
+
+    let cycleType = "6M";
+    if (nextMilestone % 1095 === 0) cycleType = "36M";
+    else if (nextMilestone % 730 === 0) cycleType = "24M";
+    else if (nextMilestone % 365 === 0) cycleType = "12M";
+
+    const nextDateObj = new Date(instDate);
+    nextDateObj.setDate(nextDateObj.getDate() + Math.round(nextMilestone / shifts));
+    
+    return { cycleType: cycleType, dateObj: nextDateObj, parts: HT_RULES[cycleType].parts };
+}
+
 const qHT = query(collection(db, "hypertherm"));
 onSnapshot(qHT, (snapshot) => {
     hyperthermDB = []; const container = document.getElementById('hypertherm-container'); if(container) container.innerHTML = '';
     if (snapshot.empty && container) { container.innerHTML = '<p class="text-slate-500 italic">Aucun générateur Hypertherm enregistré.</p>'; return; }
     snapshot.forEach(docSnap => { const data = docSnap.data(); data.id = docSnap.id; hyperthermDB.push(data); });
     hyperthermDB.sort((a, b) => new Date(a.dateInstallation) - new Date(b.dateInstallation));
-    const now = new Date();
+
     hyperthermDB.forEach(data => {
         if (container) {
-            const instDate = new Date(data.dateInstallation); const shifts = data.shifts || 1;
-            const datesEcheances = [{ nom: "6 Mois", daysRaw: HT_RULES["6M"].days, parts: HT_RULES["6M"].parts }, { nom: "1 An", daysRaw: HT_RULES["12M"].days, parts: HT_RULES["12M"].parts }, { nom: "2 Ans", daysRaw: HT_RULES["24M"].days, parts: HT_RULES["24M"].parts }, { nom: "3 Ans", daysRaw: HT_RULES["36M"].days, parts: HT_RULES["36M"].parts }].map(rule => { const echeanceDate = new Date(instDate); echeanceDate.setDate(echeanceDate.getDate() + (rule.daysRaw / shifts)); return { ...rule, date: echeanceDate }; });
-            let prochaineEcheance = datesEcheances.find(e => e.date > now) || datesEcheances[datesEcheances.length - 1]; let estEnRetard = prochaineEcheance.date < now;
-            const couleurBadge = estEnRetard ? 'bg-red-500 text-white' : 'bg-amber-100 text-amber-800'; const iconBadge = estEnRetard ? '<i class="fa-solid fa-triangle-exclamation mr-1"></i> Retard' : '<i class="fa-solid fa-clock mr-1"></i> À venir';
-
-            let timelineHTML = `<div class="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">`;
-            datesEcheances.forEach(ech => { const dateStr = ech.date.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' }); const isPassed = ech.date < now; const isNext = ech.nom === prochaineEcheance.nom; const bgC = isPassed ? "bg-slate-100 border-slate-200" : (isNext ? "bg-amber-50 border-amber-300 shadow-md" : "bg-white border-slate-200"); const txtC = isPassed ? "text-slate-400" : (isNext ? "text-amber-800 font-bold" : "text-slate-600"); timelineHTML += `<div class="border rounded-xl p-3 text-center ${bgC}"><p class="text-xs uppercase tracking-wide mb-1 ${txtC}">${ech.nom}</p><p class="text-sm font-bold ${txtC}">${dateStr}</p></div>`; });
-            timelineHTML += `</div>`;
-
-            let partsHTML = '<ul class="mt-3 space-y-2">'; let textToCopy = `Demande PDR - Préventif Hypertherm A2CIM\nClient: ${data.client}\nMachine: ${data.machine} (${data.modele})\nIntervention: ${prochaineEcheance.nom}\n\nPièces à commander :\n`;
-            prochaineEcheance.parts.forEach(p => { partsHTML += `<li class="flex justify-between items-center text-xs border-b border-amber-200/50 pb-1.5"><span class="text-slate-700 font-medium">${p.nom}</span><span class="font-mono font-bold text-amber-700 bg-amber-100/50 px-2 py-0.5 rounded border border-amber-200">Réf: ${p.ref}</span></li>`; textToCopy += `- [Réf: ${p.ref}] ${p.nom}\n`; }); partsHTML += '</ul>';
+            const cycleInfo = getNextHyperthermCycle(data.dateInstallation, data.shifts || 1);
+            const instDateStr = new Date(data.dateInstallation).toLocaleDateString('fr-FR');
+            const nextDateStr = cycleInfo.dateObj.toLocaleDateString('fr-FR');
+            
+            let partsHTML = '<ul class="mt-3 space-y-2">'; let textToCopy = `Demande PDR - Préventif Hypertherm A2CIM\nClient: ${data.client}\nMachine: ${data.machine} (${data.modele})\nIntervention: ${cycleInfo.cycleType}\n\nPièces à commander :\n`;
+            cycleInfo.parts.forEach(p => { partsHTML += `<li class="flex justify-between items-center text-xs border-b border-amber-200/50 pb-1.5"><span class="text-slate-700 font-medium">${p.nom}</span><span class="font-mono font-bold text-amber-700 bg-amber-100/50 px-2 py-0.5 rounded border border-amber-200">Réf: ${p.ref}</span></li>`; textToCopy += `- [Réf: ${p.ref}] ${p.nom}\n`; }); partsHTML += '</ul>';
             const safeText = encodeURIComponent(textToCopy);
 
-            container.innerHTML += `<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 relative overflow-hidden"><button onclick="supprimerHypertherm('${data.id}')" class="absolute top-4 right-4 text-slate-300 hover:text-red-500"><i class="fa-solid fa-trash-can"></i></button><div class="flex items-center gap-3 mb-4"><div class="w-12 h-12 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-500 text-2xl shadow-inner"><i class="fa-solid fa-bolt"></i></div><div><h3 class="font-bold text-lg text-slate-800 uppercase">${data.client} <span class="text-slate-400 font-normal mx-1">|</span> ${data.machine}</h3><p class="text-sm text-slate-500 font-medium">${data.modele} &nbsp;&bull;&nbsp; <span class="text-slate-400">Installé le ${instDate.toLocaleDateString('fr-FR')} (${data.shifts} Poste${data.shifts>1?'s':''})</span></p></div></div><div class="bg-amber-50/50 border border-amber-100 rounded-xl p-4 mt-2"><div class="flex items-center justify-between mb-3"><span class="text-xs font-bold uppercase tracking-wider text-slate-500">Prochaine Intervention : ${prochaineEcheance.nom}</span><span class="text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider ${couleurBadge}">${iconBadge}</span></div><div class="flex justify-between items-center mb-1"><p class="text-amber-900 font-bold text-xs uppercase tracking-wider"><i class="fa-solid fa-boxes-stacked mr-1 text-amber-500"></i> Liste d'achat</p><button onclick="navigator.clipboard.writeText(decodeURIComponent('${safeText}')).then(()=>alert('✅ Liste copiée pour le service Achat !'))" class="text-[10px] bg-amber-200 hover:bg-amber-300 text-amber-900 px-2 py-1.5 rounded-lg font-bold transition-colors shadow-sm"><i class="fa-solid fa-copy mr-1"></i> Copier</button></div>${partsHTML}</div>${timelineHTML}</div>`;
+            container.innerHTML += `<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 relative overflow-hidden"><button onclick="supprimerHypertherm('${data.id}')" class="absolute top-4 right-4 text-slate-300 hover:text-red-500"><i class="fa-solid fa-trash-can"></i></button><div class="flex items-center gap-3 mb-4"><div class="w-12 h-12 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-500 text-2xl shadow-inner"><i class="fa-solid fa-bolt"></i></div><div><h3 class="font-bold text-lg text-slate-800 uppercase">${data.client} <span class="text-slate-400 font-normal mx-1">|</span> ${data.machine}</h3><p class="text-sm text-slate-500 font-medium">${data.modele} &nbsp;&bull;&nbsp; <span class="text-slate-400">Installé le ${instDateStr} (${data.shifts} Poste${data.shifts>1?'s':''})</span></p></div></div><div class="bg-amber-50/50 border border-amber-100 rounded-xl p-4 mt-2"><div class="flex items-center justify-between mb-3"><span class="text-xs font-bold uppercase tracking-wider text-slate-500">Prochaine Échéance : ${cycleInfo.cycleType}</span><span class="text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider bg-amber-100 text-amber-800"><i class="fa-solid fa-calendar-day mr-1"></i> ${nextDateStr}</span></div><div class="flex justify-between items-center mb-1"><p class="text-amber-900 font-bold text-xs uppercase tracking-wider"><i class="fa-solid fa-boxes-stacked mr-1 text-amber-500"></i> Liste d'achat</p><button onclick="navigator.clipboard.writeText(decodeURIComponent('${safeText}')).then(()=>alert('✅ Liste copiée !'))" class="text-[10px] bg-amber-200 hover:bg-amber-300 text-amber-900 px-2 py-1.5 rounded-lg font-bold transition-colors shadow-sm"><i class="fa-solid fa-copy mr-1"></i> Copier</button></div>${partsHTML}</div></div>`;
         }
     });
 });
-if (document.getElementById('formAddHypertherm')) { document.getElementById('formAddHypertherm').addEventListener('submit', async (e) => { e.preventDefault(); const btnSubmit = e.target.querySelector('button[type="submit"]'); const origTxt = btnSubmit.innerHTML; btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; btnSubmit.disabled = true; try { const client = document.getElementById('htClient').value; const machine = document.getElementById('htMachine').value; const modele = document.getElementById('htModel').value; const dateInst = document.getElementById('htDateInst').value; const shifts = parseInt(document.getElementById('htShifts').value); if (!client || !machine) { alert("Sélectionnez un client et une machine."); return; } await addDoc(collection(db, "hypertherm"), { client: client, machine: machine, modele: modele, dateInstallation: dateInst, shifts: shifts, timestamp: serverTimestamp() }); e.target.reset(); document.getElementById('htMachine').innerHTML = '<option value="" disabled selected>Machine...</option>'; alert(`Le générateur ${modele} est maintenant surveillé pour ${client}.`); } catch(error) { console.error(error); alert("Erreur d'association : " + error.message); } finally { btnSubmit.innerHTML = origTxt; btnSubmit.disabled = false; } }); }
+
+if (document.getElementById('formAddHypertherm')) {
+    document.getElementById('formAddHypertherm').addEventListener('submit', async (e) => {
+        e.preventDefault(); const btnSubmit = e.target.querySelector('button[type="submit"]'); const origTxt = btnSubmit.innerHTML;
+        btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; btnSubmit.disabled = true;
+        try {
+            const client = document.getElementById('htClient').value; const machine = document.getElementById('htMachine').value;
+            const modele = document.getElementById('htModel').value; const dateInst = document.getElementById('htDateInst').value; const shifts = parseInt(document.getElementById('htShifts').value);
+            if (!client || !machine) { alert("Sélectionnez un client et une machine."); return; }
+            
+            // 1. Sauvegarde l'entité
+            await addDoc(collection(db, "hypertherm"), { client: client, machine: machine, modele: modele, dateInstallation: dateInst, shifts: shifts, timestamp: serverTimestamp() });
+            
+            // 2. Synchronisation Automatique du Calendrier (On calcule la PROCHAINE date)
+            const cycleInfo = getNextHyperthermCycle(dateInst, shifts);
+            
+            // 3. Création automatique de l'intervention avec le tag "Hypertherm"
+            await addDoc(collection(db, "interventions"), { client: client, machine: machine, date: cycleInfo.dateObj.toISOString().split('T')[0], type: "Préventif", technicien: "Équipe A2CIM", statut: "Planifié", frequence: "Hypertherm", timestamp: serverTimestamp() });
+            
+            // 4. Création automatique du Kit PDR
+            let newKit = []; cycleInfo.parts.forEach(p => { const pStock = stockDB.find(s => s.ref === p.ref); if(pStock) newKit.push({ idPiece: pStock.id, nom: pStock.nom, ref: pStock.ref, qte: 1 }); });
+            const existingKit = kitsDB[client + "_" + machine];
+            if (existingKit) { await updateDoc(doc(db, "kits", existingKit.id), { pieces: newKit }); } else { await addDoc(collection(db, "kits"), { client: client, machine: machine, pieces: newKit }); }
+            
+            e.target.reset(); document.getElementById('htMachine').innerHTML = '<option value="" disabled selected>Machine...</option>';
+            alert(`✅ ${modele} surveillé pour ${client}.\nL'intervention préventive ${cycleInfo.cycleType} a été ajoutée au calendrier pour le ${cycleInfo.dateObj.toLocaleDateString('fr-FR')} !`);
+        } catch(error) { console.error(error); alert("Erreur : " + error.message); } finally { btnSubmit.innerHTML = origTxt; btnSubmit.disabled = false; }
+    });
+}
 window.supprimerHypertherm = async function(id) { if (confirm("Arrêter la surveillance de ce générateur Hypertherm ?")) await deleteDoc(doc(db, "hypertherm", id)); };
 
 
@@ -171,7 +223,6 @@ function initCalendar() {
     });
     fullCalendarInstance.render();
 }
-
 function updateCalendarEvents() {
     if (!fullCalendarInstance) return; fullCalendarInstance.removeAllEvents();
     const todayStr = new Date().toISOString().split('T')[0]; const preventifDates = new Set();
@@ -189,9 +240,8 @@ const clientFilterSelect = document.getElementById('calendarClientFilter'); if (
 const typeFilterSelect = document.getElementById('calendarTypeFilter'); if (typeFilterSelect) typeFilterSelect.addEventListener('change', (e) => { currentTypeFilter = e.target.value; updateCalendarEvents(); });
 document.addEventListener('DOMContentLoaded', initCalendar);
 
-
 // ==========================================
-// MODAL D'ACTION ET PRE-REMPLISSAGE FICHES
+// MODAL D'ACTION (NOUVEAU BOUTON FICHE)
 // ==========================================
 const actionModal = document.getElementById('eventActionModal');
 
@@ -205,7 +255,15 @@ window.ouvrirActionModal = function(eventOrId) {
     const exactData = allInterventions.find(i => i.id === id); if(exactData) dateVal = exactData.date;
     document.getElementById('actionModalTitle').textContent = title; document.getElementById('actionModalSub').textContent = `${props.client} | ${props.frequence}`;
     document.getElementById('actionEventId').value = id; document.getElementById('actionEventDate').value = dateVal || ""; document.getElementById('actionEventClient').value = props.client; document.getElementById('actionEventType').value = props.type;
-    document.getElementById('btnSetEnCours').style.display = (props.statut === "Planifié") ? "block" : "none"; document.getElementById('btnSetTermine').style.display = (props.statut !== "Terminé") ? "block" : "none";
+    
+    // GESTION DES BOUTONS SELON STATUT
+    document.getElementById('btnSetEnCours').style.display = (props.statut === "Planifié") ? "block" : "none"; 
+    document.getElementById('btnSetTermine').style.display = (props.statut !== "Terminé") ? "block" : "none";
+    document.getElementById('deleteOptionsDiv').style.display = (props.statut !== "Terminé") ? "block" : "none";
+    
+    // NOUVEAU BOUTON : Si Terminé, on montre "Voir Fiche" et on cache le reste
+    const btnVoirFiche = document.getElementById('btnVoirFiche');
+    if (props.statut === "Terminé") { btnVoirFiche.style.display = "block"; } else { btnVoirFiche.style.display = "none"; }
     
     const encartPDR = document.getElementById('actionModalPDR'); const ulPDR = document.getElementById('actionModalPDRList'); ulPDR.innerHTML = '';
     const theKit = kitsDB[props.client + "_" + props.machine];
@@ -217,8 +275,6 @@ window.ouvrirActionModal = function(eventOrId) {
 }
 function fermerActionModal() { actionModal.classList.add('hidden'); actionModal.classList.remove('flex'); }
 document.getElementById('btnCloseActionModal').addEventListener('click', fermerActionModal);
-
-// SUPPRESSIONS
 document.getElementById('btnDeleteEvent').addEventListener('click', async () => { if (confirm("Supprimer l'intervention pour cette machine uniquement ?")) { await deleteDoc(doc(db, "interventions", document.getElementById('actionEventId').value)); fermerActionModal(); } });
 document.getElementById('btnDeleteGroup').addEventListener('click', async () => {
     const client = document.getElementById('actionEventClient').value; const date = document.getElementById('actionEventDate').value; const type = document.getElementById('actionEventType').value;
@@ -231,8 +287,52 @@ document.getElementById('btnDeleteGroup').addEventListener('click', async () => 
 document.getElementById('btnSetEnCours').addEventListener('click', async () => { await updateDoc(doc(db, "interventions", document.getElementById('actionEventId').value), { statut: "En cours" }); fermerActionModal(); });
 
 // ==========================================
-// LE PONT D'INTELLIGENCE : "VALIDER ET CRÉER FICHE"
+// LOGIQUE DE PRÉ-REMPLISSAGE DE FICHE
 // ==========================================
+function preRemplirFiche(interventionData, isNouvelleFin) {
+    const theKit = kitsDB[interventionData.client + "_" + interventionData.machine];
+    document.getElementById('input_client').value = interventionData.client;
+    document.getElementById('input_machine').value = interventionData.machine;
+    document.getElementById('input_date').value = interventionData.date; // Met la date de l'intervention
+    
+    if (interventionData.type === "Préventif") {
+        document.getElementById('input_forfait_ref').value = "PREV";
+        document.getElementById('input_forfait_nom').value = "SAV-Préventif";
+        document.getElementById('input_forfait_diag').value = "Maintenance Préventive " + interventionData.machine;
+        
+        let texteTravaux = `Maintenance préventive effectuée sur ${interventionData.machine}.\n`;
+        if (theKit && theKit.pieces.length > 0) {
+            texteTravaux += "\nRemplacement des consommables / PDR :\n";
+            theKit.pieces.forEach(p => { texteTravaux += `- ${p.qte}x [${p.ref}] ${p.nom}\n`; });
+        }
+        document.getElementById('input_travaux').value = texteTravaux;
+    } else {
+        document.getElementById('input_forfait_ref').value = "DEPAN";
+        document.getElementById('input_forfait_nom').value = "SAV-Depannage";
+        document.getElementById('input_forfait_diag').value = "Diagnostic " + interventionData.machine;
+        document.getElementById('input_travaux').value = ""; 
+    }
+
+    const techListContainer = document.getElementById('fiche-tech-list');
+    techListContainer.innerHTML = '';
+    const techs = interventionData.technicien ? interventionData.technicien.split(', ') : [];
+    techs.forEach(t => {
+        if(t && t.trim() !== '?') {
+            techListContainer.innerHTML += `<div class="flex items-center gap-3 mb-2 tech-row"><input type="text" class="tech-name w-1/2 p-2 border border-slate-300 rounded-lg text-sm bg-white font-bold" value="${t}"><input type="number" class="tech-qty-val w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white" placeholder="Qté" value="1" step="0.5"><select class="tech-qty-unit w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white"><option value="Heure(s)">Heure(s)</option><option value="Jour(s)">Jour(s)</option></select><button type="button" class="text-red-500 hover:text-red-700 font-bold px-2" onclick="this.parentElement.remove()">X</button></div>`;
+        }
+    });
+
+    fermerActionModal();
+    document.querySelector('a[data-view="fiches"]').click();
+}
+
+// 1. Bouton "Voir la Fiche" (Pour les archives Terminées - SANS décrémenter le stock)
+document.getElementById('btnVoirFiche').addEventListener('click', () => {
+    const id = document.getElementById('actionEventId').value; const interventionData = allInterventions.find(i => i.id === id);
+    if (interventionData) preRemplirFiche(interventionData, false);
+});
+
+// 2. Bouton "Valider et Créer Fiche" (Pour clôturer - AVEC décrémentation stock et récurrence)
 document.getElementById('btnSetTermine').addEventListener('click', async () => {
     const btnTermine = document.getElementById('btnSetTermine'); const originalContent = btnTermine.innerHTML;
     btnTermine.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Auto-Génération...'; btnTermine.disabled = true;
@@ -241,73 +341,36 @@ document.getElementById('btnSetTermine').addEventListener('click', async () => {
 
     try {
         const theKit = kitsDB[interventionData.client + "_" + interventionData.machine];
-        
-        // 1. Décrémentation du stock
         if (interventionData.type === "Préventif" && theKit && theKit.pieces.length > 0) {
             for (const p of theKit.pieces) { await updateDoc(doc(db, "stock", p.idPiece), { qte: increment(-p.qte) }); }
         }
 
-        // 2. Marquer Terminé
         await updateDoc(doc(db, "interventions", id), { statut: "Terminé" });
 
-        // 3. Récurrence
         const freq = interventionData.frequence || "Ponctuel";
-        if (freq !== "Ponctuel") {
+        if (freq === "Hypertherm") {
+            // RECALCUL INFINI HYPERTHERM
+            const htMachine = hyperthermDB.find(h => h.client === interventionData.client && h.machine === interventionData.machine);
+            if(htMachine) {
+                const cycleInfo = getNextHyperthermCycle(htMachine.dateInstallation, htMachine.shifts || 1);
+                await addDoc(collection(db, "interventions"), { client: interventionData.client, machine: interventionData.machine, date: cycleInfo.dateObj.toISOString().split('T')[0], type: "Préventif", technicien: "Équipe A2CIM", statut: "Planifié", frequence: "Hypertherm", timestamp: serverTimestamp() });
+                
+                // Maj du kit PDR auto
+                let newKit = []; cycleInfo.parts.forEach(p => { const pStock = stockDB.find(s => s.ref === p.ref); if(pStock) newKit.push({ idPiece: pStock.id, nom: pStock.nom, ref: pStock.ref, qte: 1 }); });
+                if (theKit) { await updateDoc(doc(db, "kits", theKit.id), { pieces: newKit }); } else { await addDoc(collection(db, "kits"), { client: htMachine.client, machine: htMachine.machine, pieces: newKit }); }
+            }
+        } else if (freq !== "Ponctuel") {
+            // RÉCURRENCE NORMALE
             const dateObj = new Date(interventionData.date);
             if (freq === "Mensuel") dateObj.setMonth(dateObj.getMonth() + 1); else if (freq === "Trimestriel") dateObj.setMonth(dateObj.getMonth() + 3); else if (freq === "Semestriel") dateObj.setMonth(dateObj.getMonth() + 6); else if (freq === "Annuel") dateObj.setFullYear(dateObj.getFullYear() + 1);
-            const nouvelleDateStr = dateObj.toISOString().split('T')[0];
-            await addDoc(collection(db, "interventions"), { client: interventionData.client, machine: interventionData.machine, date: nouvelleDateStr, type: interventionData.type, technicien: interventionData.technicien, statut: "Planifié", frequence: freq, timestamp: serverTimestamp() });
+            await addDoc(collection(db, "interventions"), { client: interventionData.client, machine: interventionData.machine, date: dateObj.toISOString().split('T')[0], type: interventionData.type, technicien: interventionData.technicien, statut: "Planifié", frequence: freq, timestamp: serverTimestamp() });
         }
 
-        // 4. AUTO-REMPLISSAGE DE LA FICHE NATIVE
-        document.getElementById('input_client').value = interventionData.client;
-        document.getElementById('input_machine').value = interventionData.machine;
-        document.getElementById('input_date').value = new Date().toISOString().split('T')[0]; // Date du jour
-        
-        // Remplissage Forfait
-        if (interventionData.type === "Préventif") {
-            document.getElementById('input_forfait_ref').value = "PREV";
-            document.getElementById('input_forfait_nom').value = "SAV-Préventif";
-            document.getElementById('input_forfait_diag').value = "Maintenance Préventive " + interventionData.machine;
-            
-            // Auto-rédaction des Travaux
-            let texteTravaux = `Maintenance préventive effectuée sur ${interventionData.machine}.\n`;
-            if (theKit && theKit.pieces.length > 0) {
-                texteTravaux += "\nRemplacement des consommables / PDR :\n";
-                theKit.pieces.forEach(p => { texteTravaux += `- ${p.qte}x [${p.ref}] ${p.nom}\n`; });
-            }
-            document.getElementById('input_travaux').value = texteTravaux;
-        } else {
-            document.getElementById('input_forfait_ref').value = "DEPAN";
-            document.getElementById('input_forfait_nom').value = "SAV-Depannage";
-            document.getElementById('input_forfait_diag').value = "Diagnostic " + interventionData.machine;
-            document.getElementById('input_travaux').value = ""; // Laisser vide pour le curatif
-        }
+        preRemplirFiche(interventionData, true);
 
-        // Auto-remplissage Techniciens
-        const techListContainer = document.getElementById('fiche-tech-list');
-        techListContainer.innerHTML = '';
-        const techs = interventionData.technicien.split(', ');
-        techs.forEach(t => {
-            if(t && t.trim() !== '?') {
-                techListContainer.innerHTML += `
-                <div class="flex items-center gap-3 mb-2 tech-row">
-                    <input type="text" class="tech-name w-1/2 p-2 border border-slate-300 rounded-lg text-sm bg-white font-bold" value="${t}">
-                    <input type="number" class="tech-qty-val w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white" placeholder="Qté" value="1" step="0.5">
-                    <select class="tech-qty-unit w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white"><option value="Heure(s)">Heure(s)</option><option value="Jour(s)">Jour(s)</option></select>
-                    <button type="button" class="text-red-500 hover:text-red-700 font-bold px-2" onclick="this.parentElement.remove()">X</button>
-                </div>`;
-            }
-        });
-
-        // 5. Bascule sur l'écran des fiches
-        fermerActionModal();
-        document.querySelector('a[data-view="fiches"]').click();
-
-    } catch (e) { console.error(e); alert("Une erreur s'est produite lors de la validation."); } 
+    } catch (e) { console.error(e); alert("Erreur lors de la validation."); } 
     finally { btnTermine.innerHTML = originalContent; btnTermine.disabled = false; }
 });
-
 
 // ==========================================
 // SYNCHRO TABLEAU DE BORD (GROUPÉ)
@@ -359,31 +422,65 @@ window.ouvrirModalGroupe = function(groupKey) {
 }
 window.fermerModalGroupe = function() { document.getElementById('groupModal').classList.add('hidden'); document.getElementById('groupModal').classList.remove('flex'); }
 
+// --- AJOUT INTERVENTION (BOUCLIER ANTI-DOUBLONS) ---
+const modal = document.getElementById('addInterventionModal');
+function openModal() { if (modal) { modal.classList.remove('hidden'); modal.classList.add('flex'); } }
+function closeModal() { if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); } }
+if(document.getElementById('addInterventionBtn')) document.getElementById('addInterventionBtn').addEventListener('click', openModal);
+if(document.getElementById('closeModalBtn')) document.getElementById('closeModalBtn').addEventListener('click', closeModal);
+if(document.getElementById('cancelModalBtn')) document.getElementById('cancelModalBtn').addEventListener('click', closeModal);
+
+if(document.getElementById('addInterventionForm')) {
+    document.getElementById('addInterventionForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btnSubmit = document.getElementById('btnSubmit'); const originalText = btnSubmit.innerHTML;
+        const techCheckboxes = document.querySelectorAll('input[name="tech"]:checked');
+        if (techCheckboxes.length === 0) { alert("⚠️ Veuillez sélectionner au moins un technicien."); return; }
+        const techVal = Array.from(techCheckboxes).map(cb => cb.value).join(', ');
+        btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Création...'; btnSubmit.disabled = true;
+
+        const clientVal = document.getElementById('formClient').value; const machineVal = document.getElementById('formMachine').value; const dateVal = document.getElementById('formDate').value; const typeVal = document.getElementById('formType').value; const freqVal = document.getElementById('formFrequence').value;
+
+        function isDuplicate(c, m, d, t) { return allInterventions.some(i => i.client === c && i.machine === m && i.date === d && i.type === t && i.statut === "Planifié"); }
+
+        try {
+            if (machineVal === "TOUTES_LES_MACHINES") {
+                const machinesDuClient = parcClientsDB[clientVal].machines; let ajouts = 0; let doublons = 0;
+                for (const m of machinesDuClient) {
+                    if (isDuplicate(clientVal, m, dateVal, typeVal)) { doublons++; } else { await addDoc(collection(db, "interventions"), { client: clientVal, machine: m, date: dateVal, type: typeVal, technicien: techVal, statut: "Planifié", frequence: freqVal, timestamp: serverTimestamp() }); ajouts++; }
+                }
+                let alertMsg = `${ajouts} interventions planifiées pour ${clientVal} !`;
+                if (doublons > 0) alertMsg += `\n⚠️ ${doublons} doublon(s) ignoré(s).`; alert(alertMsg);
+            } else {
+                if (isDuplicate(clientVal, machineVal, dateVal, typeVal)) { alert("⚠️ Cette intervention est déjà planifiée ! (Doublon évité)"); } 
+                else { await addDoc(collection(db, "interventions"), { client: clientVal, machine: machineVal, date: dateVal, type: typeVal, technicien: techVal, statut: "Planifié", frequence: freqVal, timestamp: serverTimestamp() }); }
+            }
+            e.target.reset(); closeModal();
+        } catch(err) { console.error(err); alert("Erreur lors de la création"); } finally { btnSubmit.innerHTML = originalText; btnSubmit.disabled = false; }
+    });
+}
+
+// Navigation & Bouton contextuel
+const navLinks = document.querySelectorAll('.nav-link'); const appViews = document.querySelectorAll('.app-view'); const addBtn = document.getElementById('addInterventionBtn'); const allowedViewsForAddBtn = ['dashboard', 'planning', 'curatif'];
+navLinks.forEach(link => {
+    link.addEventListener('click', (e) => {
+        e.preventDefault(); const targetView = link.getAttribute('data-view');
+        appViews.forEach(view => view.classList.add('hidden')); document.getElementById(`view-${targetView}`).classList.remove('hidden');
+        if (targetView === 'planning' && fullCalendarInstance) setTimeout(() => { fullCalendarInstance.render(); }, 100);
+        if (addBtn) { if (allowedViewsForAddBtn.includes(targetView)) { addBtn.classList.remove('opacity-0', 'pointer-events-none'); addBtn.classList.add('opacity-100'); } else { addBtn.classList.remove('opacity-100'); addBtn.classList.add('opacity-0', 'pointer-events-none'); } }
+        navLinks.forEach(l => { l.classList.remove('bg-brand-800', 'text-white'); l.classList.add('text-slate-400'); }); document.querySelectorAll(`[data-view="${targetView}"]`).forEach(activeL => { activeL.classList.add('bg-brand-800', 'text-white'); activeL.classList.remove('text-slate-400'); });
+    });
+});
+
 // ==========================================
 // GESTION NATIVE DE LA FICHE D'INTERVENTION
 // ==========================================
-// Fonction d'échappement HTML pour éviter les bugs
-function escapeHtml(str) {
-    if (!str) return "";
-    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-}
-
-let pad = (n) => n < 10 ? '0' + n : n;
-let now = new Date();
-if(document.getElementById('input_date_tirage')) {
-    document.getElementById('input_date_tirage').valueAsDate = now;
-    document.getElementById('input_heure_tirage').value = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
-}
+function escapeHtml(str) { if (!str) return ""; return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
+let pad = (n) => n < 10 ? '0' + n : n; let now = new Date();
+if(document.getElementById('input_date_tirage')) { document.getElementById('input_date_tirage').valueAsDate = now; document.getElementById('input_heure_tirage').value = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds()); }
 
 window.addFicheTechnician = function() {
-    const list = document.getElementById('fiche-tech-list');
-    list.innerHTML += `
-    <div class="flex items-center gap-3 mb-2 tech-row">
-        <input type="text" class="tech-name w-1/2 p-2 border border-slate-300 rounded-lg text-sm bg-white font-bold" placeholder="Nom">
-        <input type="number" class="tech-qty-val w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white" placeholder="Qté" value="1" step="0.5">
-        <select class="tech-qty-unit w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white"><option value="Heure(s)">Heure(s)</option><option value="Jour(s)">Jour(s)</option></select>
-        <button type="button" class="text-red-500 hover:text-red-700 font-bold px-2" onclick="this.parentElement.remove()">X</button>
-    </div>`;
+    document.getElementById('fiche-tech-list').innerHTML += `<div class="flex items-center gap-3 mb-2 tech-row"><input type="text" class="tech-name w-1/2 p-2 border border-slate-300 rounded-lg text-sm bg-white font-bold" placeholder="Nom"><input type="number" class="tech-qty-val w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white" placeholder="Qté" value="1" step="0.5"><select class="tech-qty-unit w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white"><option value="Heure(s)">Heure(s)</option><option value="Jour(s)">Jour(s)</option></select><button type="button" class="text-red-500 hover:text-red-700 font-bold px-2" onclick="this.parentElement.remove()">X</button></div>`;
 };
 
 window.processOCR = async function() {
@@ -399,35 +496,24 @@ window.processOCR = async function() {
 };
 
 window.sendWhatsApp = function() {
-    let fisav = document.getElementById('input_fisav').value || "N/A";
-    let client = document.getElementById('input_client').value || "Client";
-    let machine = document.getElementById('input_machine').value || "Machine";
+    let fisav = document.getElementById('input_fisav').value || "N/A"; let client = document.getElementById('input_client').value || "Client"; let machine = document.getElementById('input_machine').value || "Machine";
     let message = `Bonjour, voici la fiche d'intervention A2CIM.\n\n*N° FISAV :* ${fisav}\n*Client :* ${client}\n*Machine :* ${machine}\n\n(Veuillez trouver le fichier PDF en pièce jointe).`;
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
 };
 
 window.prepareAndPrint = function() {
-    const fisavCheck = document.getElementById('input_fisav').value.trim();
-    const clientCheck = document.getElementById('input_client').value.trim();
-    const machineCheck = document.getElementById('input_machine').value.trim();
-    const dateCheck = document.getElementById('input_date').value;
+    const fisavCheck = document.getElementById('input_fisav').value.trim(); const clientCheck = document.getElementById('input_client').value.trim(); const machineCheck = document.getElementById('input_machine').value.trim(); const dateCheck = document.getElementById('input_date').value;
     const champsManquants = [];
     if (!fisavCheck) champsManquants.push("N° FISAV"); if (!clientCheck) champsManquants.push("Client"); if (!machineCheck) champsManquants.push("Machine"); if (!dateCheck) champsManquants.push("Date d'intervention");
     if (champsManquants.length > 0) { alert("Veuillez remplir :\n- " + champsManquants.join("\n- ")); return; }
 
-    const btnGenerer = document.getElementById('btn-generate-main');
-    btnGenerer.disabled = true; btnGenerer.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Préparation PDF...';
+    const btnGenerer = document.getElementById('btn-generate-main'); btnGenerer.disabled = true; btnGenerer.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Préparation PDF...';
 
-    // Remplissage du DOM caché pour l'impression
     let fisav = document.getElementById('input_fisav').value; document.getElementById('p_fisav').innerText = fisav; document.getElementById('p_bottom_fisav').innerText = fisav;
     let reference = document.getElementById('input_reference').value; document.getElementById('p_ref').innerText = reference;
-    let dateVal = document.getElementById('input_date').value;
-    if(dateVal) { let d = new Date(dateVal); document.getElementById('p_date').innerText = pad(d.getDate()) + '/' + pad(d.getMonth()+1) + '/' + d.getFullYear().toString().slice(-2); }
-    
-    let dateTirageVal = document.getElementById('input_date_tirage').value;
-    if(dateTirageVal) { let dt = new Date(dateTirageVal); document.getElementById('p_date_tirage').innerText = pad(dt.getDate()) + '/' + pad(dt.getMonth()+1) + '/' + dt.getFullYear().toString().slice(-2); }
+    let dateVal = document.getElementById('input_date').value; if(dateVal) { let d = new Date(dateVal); document.getElementById('p_date').innerText = pad(d.getDate()) + '/' + pad(d.getMonth()+1) + '/' + d.getFullYear().toString().slice(-2); }
+    let dateTirageVal = document.getElementById('input_date_tirage').value; if(dateTirageVal) { let dt = new Date(dateTirageVal); document.getElementById('p_date_tirage').innerText = pad(dt.getDate()) + '/' + pad(dt.getMonth()+1) + '/' + dt.getFullYear().toString().slice(-2); }
     let heureTirage = document.getElementById('input_heure_tirage').value; document.getElementById('p_heure_tirage').innerText = heureTirage;
-    
     let client = document.getElementById('input_client').value; document.getElementById('p_client').innerText = client;
     let machine = document.getElementById('input_machine').value; document.getElementById('p_machine').innerText = machine; document.getElementById('p_ref_machine').innerText = machine;
     let travauxBruts = document.getElementById('input_travaux').value; document.getElementById('p_travaux_content').innerHTML = escapeHtml(travauxBruts).replace(/\n/g, '<br>');
@@ -438,9 +524,7 @@ window.prepareAndPrint = function() {
     
     let techNames = []; let detailTechniciens = []; let totalQty = 0; let currentUnit = "";
     document.querySelectorAll('.tech-row').forEach((row) => {
-        let name = row.querySelector('.tech-name').value.toUpperCase();
-        let qtyVal = parseFloat(row.querySelector('.tech-qty-val').value) || 0;
-        let unit = row.querySelector('.tech-qty-unit').value;
+        let name = row.querySelector('.tech-name').value.toUpperCase(); let qtyVal = parseFloat(row.querySelector('.tech-qty-val').value) || 0; let unit = row.querySelector('.tech-qty-unit').value;
         if (name.trim() !== '') {
             techNames.push(name); detailTechniciens.push({ nom: name, quantite: qtyVal, unite: unit }); totalQty += qtyVal; currentUnit = unit;
             tbody.innerHTML += `<tr><td style="padding-top: 10px;">FHTEC-EM2</td><td style="padding-top: 10px;">Heure Technicien ${escapeHtml(name)}</td><td style="padding-top: 10px; text-align: center;">${qtyVal} ${unit === 'Heure(s)' ? 'H' : 'J'}</td><td style="padding-top: 10px; text-align: right;">0,00</td><td style="padding-top: 10px; text-align: right;">0,00</td></tr>`;
@@ -450,41 +534,21 @@ window.prepareAndPrint = function() {
     let allTechs = techNames.join(', '); document.getElementById('p_nom_tech').innerText = allTechs; document.getElementById('p_realise_par').innerText = allTechs;
     let totalFormatte = totalQty > 0 ? (totalQty + (currentUnit === 'Heure(s)' ? ' H' : ' J')) : '0,00'; document.getElementById('p_somme_reporter').innerText = totalFormatte;
 
-    // Sauvegarde Cloud (dans la même DB gmao-a2cim)
     const historiqueData = {
         numero_fisav: fisav, reference_intervention: reference, client: client, machine: machine,
         date_intervention: dateVal, date_tirage: dateTirageVal + " " + heureTirage, diagnostic: diagForfait,
         travaux_realises: travauxBruts, techniciens_intervenants: detailTechniciens, total_temps: totalFormatte, 
         timestamp_creation: serverTimestamp()
     };
-
     addDoc(collection(db, "historique_interventions"), historiqueData).catch((error) => console.error("Erreur sync :", error));
 
-    const originalTitle = document.title;
-    const fisavNom = fisavCheck.replace(/[^a-zA-Z0-9]/g, '_');
-    const clientNom = clientCheck.replace(/[^a-zA-Z0-9]/g, '_');
-    document.title = `Fiche_${fisavNom}_${clientNom}`;
+    const originalTitle = document.title; const fisavNom = fisavCheck.replace(/[^a-zA-Z0-9]/g, '_'); const clientNom = clientCheck.replace(/[^a-zA-Z0-9]/g, '_'); document.title = `Fiche_${fisavNom}_${clientNom}`;
 
     setTimeout(() => {
-        window.print();
-        document.title = originalTitle;
+        window.print(); document.title = originalTitle;
         setTimeout(() => { btnGenerer.disabled = false; btnGenerer.innerHTML = '<i class="fa-solid fa-print mr-2"></i> Sauvegarder & Imprimer le PDF'; }, 1000);
     }, 500);
 };
-
-// ==========================================
-// NAVIGATION ET BOUTON "+"
-// ==========================================
-const navLinks = document.querySelectorAll('.nav-link'); const appViews = document.querySelectorAll('.app-view'); const addBtn = document.getElementById('addInterventionBtn'); const allowedViewsForAddBtn = ['dashboard', 'planning', 'curatif'];
-navLinks.forEach(link => {
-    link.addEventListener('click', (e) => {
-        e.preventDefault(); const targetView = link.getAttribute('data-view');
-        appViews.forEach(view => view.classList.add('hidden')); document.getElementById(`view-${targetView}`).classList.remove('hidden');
-        if (targetView === 'planning' && fullCalendarInstance) setTimeout(() => { fullCalendarInstance.render(); }, 100);
-        if (addBtn) { if (allowedViewsForAddBtn.includes(targetView)) { addBtn.classList.remove('opacity-0', 'pointer-events-none'); addBtn.classList.add('opacity-100'); } else { addBtn.classList.remove('opacity-100'); addBtn.classList.add('opacity-0', 'pointer-events-none'); } }
-        navLinks.forEach(l => { l.classList.remove('bg-brand-800', 'text-white'); l.classList.add('text-slate-400'); }); document.querySelectorAll(`[data-view="${targetView}"]`).forEach(activeL => { activeL.classList.add('bg-brand-800', 'text-white'); activeL.classList.remove('text-slate-400'); });
-    });
-});
 
 // PWA
 if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(err => console.error('Erreur SW', err)); }); }
