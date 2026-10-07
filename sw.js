@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gmao-a2cim-v34';
+const CACHE_NAME = 'gmao-a2cim-v35';
 
 self.addEventListener('install', (e) => {
     self.skipWaiting();
