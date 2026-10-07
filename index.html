@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1e3a8a">
     <title>GMAO pro A2CIM - Tableau de bord</title>
 
-    <link rel="stylesheet" href="style.css?v=25">
+    <link rel="stylesheet" href="style.css?v=26">
     <link rel="manifest" href="manifest.json">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -31,6 +31,9 @@
         .fc-event { cursor: pointer; border: none !important; padding: 4px; border-radius: 4px; font-weight: 500; font-size: 0.75rem; }
         .fc-daygrid-day-frame { cursor: pointer; transition: background-color 0.2s; }
         .fc-daygrid-day-frame:hover { background-color: #f8fafc; }
+        /* Style pour la bulle des interventions supplémentaires ("+X autres") */
+        .fc-popover { border-radius: 0.75rem !important; border: 1px solid #e2e8f0 !important; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important; z-index: 50 !important; }
+        .fc-popover-header { background-color: #f8fafc !important; border-top-left-radius: 0.75rem !important; border-top-right-radius: 0.75rem !important; font-weight: bold; }
         
         .custom-scroll::-webkit-scrollbar { width: 6px; }
         .custom-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -40,7 +43,7 @@
 </head>
 <body class="text-slate-800 antialiased font-sans flex h-screen overflow-hidden">
 
-    <!-- ÉCRAN DE VERROUILLAGE (Désactivé) -->
+    <!-- ÉCRAN DE VERROUILLAGE (Désactivé avec hidden) -->
     <div id="lockScreen" class="fixed inset-0 bg-brand-900 z-50 hidden items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-8 text-center">
             <div class="w-16 h-16 bg-brand-50 text-brand-900 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-inner"><i class="fa-solid fa-lock"></i></div>
@@ -76,7 +79,8 @@
             <div class="flex items-center space-x-2"><i class="fa-solid fa-cogs text-blue-300"></i><h1 class="text-xl font-bold tracking-wider">GMAO <span class="text-blue-300">A2CIM</span></h1></div>
         </header>
 
-        <main class="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 no-scrollbar w-full relative h-full">
+        <!-- Container principal avec hauteur pleine (h-full) -->
+        <main class="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 no-scrollbar w-full relative flex flex-col h-full">
             
             <!-- VUE 1 : TABLEAU DE BORD -->
             <div id="view-dashboard" class="app-view">
@@ -98,12 +102,12 @@
                 </div>
             </div>
 
-            <!-- VUE : CALENDRIER GLOBAL (Plein écran & Interactif) -->
-            <div id="view-planning" class="app-view hidden flex-col h-full">
+            <!-- VUE : CALENDRIER GLOBAL (Plein écran & Interactif avec regroupement) -->
+            <div id="view-planning" class="app-view hidden flex-col h-full w-full">
                 <header class="mb-4 flex flex-col xl:flex-row justify-between items-start xl:items-end space-y-4 xl:space-y-0 shrink-0">
                     <div>
                         <h2 class="text-2xl font-bold text-slate-800">Calendrier Global</h2>
-                        <p class="text-slate-500 text-sm mt-1">Cliquez sur le numéro d'un jour pour voir ses interventions.</p>
+                        <p class="text-slate-500 text-sm mt-1">Vision complète du parc. Trop d'interventions ? Cliquez sur "+X autres".</p>
                     </div>
                     <div class="flex flex-col sm:flex-row gap-3 w-full xl:w-auto">
                         <div class="w-full sm:w-48">
@@ -123,8 +127,9 @@
                     </div>
                 </header>
                 
-                <div class="bg-white p-2 md:p-4 rounded-2xl shadow-sm border border-slate-100 flex-1 overflow-hidden flex flex-col min-h-[500px]">
-                    <div id="calendar" class="flex-1 w-full"></div>
+                <!-- Ajustement de la div pour forcer le calendrier à prendre tout l'espace (flex-1) -->
+                <div class="bg-white p-2 md:p-4 rounded-2xl shadow-sm border border-slate-100 flex-1 overflow-hidden flex flex-col min-h-[65vh]">
+                    <div id="calendar" class="flex-1 w-full h-full"></div>
                 </div>
             </div>
 
@@ -137,7 +142,6 @@
                     <h2 class="text-2xl font-bold text-slate-800">Stock PDR Central</h2>
                     <p class="text-slate-500 text-sm mt-1">Gérez l'inventaire de l'atelier A2CIM pour vos interventions.</p>
                 </header>
-                
                 <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 mb-6">
                     <form id="formAddStock" class="flex flex-col sm:flex-row gap-3">
                         <input type="text" id="newStockRef" placeholder="Réf (ex: FIL-01)" required class="w-full sm:w-1/5 px-4 py-2 border border-slate-300 rounded-xl focus:ring-brand-500 text-sm">
@@ -177,10 +181,14 @@
                 <div class="flex-1 w-full bg-slate-50 rounded-2xl shadow-inner border border-slate-200 overflow-hidden min-h-[600px] mb-12"><iframe src="https://raijin-lab.github.io/FicheD-intervention/" class="w-full h-full border-0"></iframe></div>
             </div>
 
-            <button id="addInterventionBtn" class="fixed bottom-20 md:bottom-8 right-4 md:right-8 w-14 h-14 bg-brand-500 hover:bg-brand-600 text-white rounded-full shadow-lg flex items-center justify-center text-2xl z-40"><i class="fa-solid fa-plus"></i></button>
+            <!-- LE BOUTON "+" INTELLIGENT (Transition ajoutée pour une apparition/disparition fluide) -->
+            <button id="addInterventionBtn" class="fixed bottom-20 md:bottom-8 right-4 md:right-8 w-14 h-14 bg-brand-500 hover:bg-brand-600 text-white rounded-full shadow-lg flex items-center justify-center text-2xl z-40 transition-all duration-300 scale-100">
+                <i class="fa-solid fa-plus"></i>
+            </button>
         </main>
     </div>
 
+    <!-- Modals inchangés visuellement, gardent la logique v25 -->
     <!-- Modal d'Action (Calendrier) AVEC ENCART PDR -->
     <div id="eventActionModal" class="fixed inset-0 bg-slate-900 bg-opacity-60 hidden items-center justify-center z-50 px-4">
         <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center">
@@ -208,7 +216,7 @@
         </div>
     </div>
     
-    <!-- Modal Ajout avec Sélection MULTIPLE de Techniciens -->
+    <!-- Modal Ajout Intervention -->
     <div id="addInterventionModal" class="fixed inset-0 bg-slate-900 bg-opacity-60 hidden items-center justify-center z-50 px-4 backdrop-blur-sm transition-opacity">
         <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full flex flex-col max-h-[90vh]">
             <div class="px-6 py-4 border-b flex justify-between items-center bg-slate-50"><h3 id="modalAddTitle" class="text-lg font-bold text-slate-800">Nouvelle Intervention</h3><button id="closeModalBtn" class="text-slate-400 hover:text-slate-700"><i class="fa-solid fa-xmark text-lg"></i></button></div>
@@ -250,6 +258,6 @@
         <a href="#" data-view="fiches" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-clipboard-list text-lg mb-1"></i><span class="text-[9px] font-medium">Fiches</span></a>
     </nav>
 
-    <script type="module" src="app.js?v=25"></script>
+    <script type="module" src="app.js?v=26"></script>
 </body>
 </html>
