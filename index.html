@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1e3a8a">
     <title>GMAO pro A2CIM - Tableau de bord</title>
 
-    <link rel="stylesheet" href="style.css?v=40">
+    <link rel="stylesheet" href="style.css?v=41">
     <link rel="manifest" href="manifest.json">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -74,7 +74,7 @@
 </head>
 <body class="text-slate-800 antialiased font-sans flex h-screen overflow-hidden">
 
-    <!-- ECRAN DE CONNEXION (Firebase Auth) : visible par défaut, masqué par firebase-init.js une fois connecté -->
+    <!-- ECRAN DE CONNEXION -->
     <div id="lockScreen" class="fixed inset-0 bg-brand-900 z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-8 text-center">
             <div class="w-16 h-16 bg-brand-50 text-brand-900 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-inner"><i class="fa-solid fa-lock"></i></div>
@@ -93,6 +93,7 @@
         </div>
     </div>
 
+    <!-- Menu Latéral Bureau -->
     <aside class="hidden md:flex flex-col w-64 bg-brand-900 text-white shadow-xl h-full z-20 shrink-0">
         <div class="p-6 flex items-center space-x-3 border-b border-brand-800"><div class="bg-white text-brand-900 p-2 rounded-lg"><i class="fa-solid fa-cogs text-xl"></i></div><h1 class="text-2xl font-bold tracking-wider">GMAO <span class="text-blue-300">A2CIM</span></h1></div>
         <nav class="flex-1 px-4 py-6 space-y-2 overflow-y-auto custom-scroll">
@@ -101,6 +102,10 @@
             <a href="#" data-view="curatif" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-triangle-exclamation w-6 text-center"></i><span class="font-medium">Interv. Curatives</span></a>
             <a href="#" data-view="parc" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-industry w-6 text-center"></i><span class="font-medium">Gestion du Parc</span></a>
             <a href="#" data-view="hypertherm" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-fire-flame-curved w-6 text-center text-amber-500"></i><span class="font-medium">Expertise HT</span></a>
+            
+            <!-- LA LIGNE RESTAURÉE ! -->
+            <a href="#" data-view="docs" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-book-open w-6 text-center"></i><span class="font-medium">Base Doc.</span></a>
+            
             <a href="#" data-view="fiches" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-clipboard-list w-6 text-center"></i><span class="font-medium">Fiches Interv.</span></a>
             <a href="#" data-view="historique" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-box-archive w-6 text-center"></i><span class="font-medium">Historique</span></a>
         </nav>
@@ -111,16 +116,15 @@
 
         <main class="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 custom-scroll relative w-full h-full bg-slate-50/50">
 
+            <!-- VUE DASHBOARD -->
             <div id="view-dashboard" class="app-view">
                 <header class="mb-8"><h2 class="text-2xl font-bold text-slate-800">Aperçu du Parc</h2><p class="text-slate-500 text-sm mt-1">Centre de contrôle. Cliquez sur un client pour gérer les interventions et éditer les fiches.</p></header>
-
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center"><div class="flex items-center justify-between mb-2"><h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Planifiées</h3><div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600"><i class="fa-solid fa-calendar-day"></i></div></div><p id="kpi-total" class="text-3xl font-bold text-slate-800">0</p></div>
                     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center"><div class="flex items-center justify-between mb-2"><h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">En retard</h3><div class="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-red-600"><i class="fa-solid fa-triangle-exclamation"></i></div></div><p id="kpi-retard" class="text-3xl font-bold text-red-600">0</p></div>
                     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center"><div class="flex items-center justify-between mb-2"><h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">En cours</h3><div class="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-600"><i class="fa-solid fa-screwdriver-wrench"></i></div></div><p id="kpi-encours" class="text-3xl font-bold text-slate-800">0</p></div>
                     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center"><div class="flex items-center justify-between mb-2"><h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">À Éditer (Fiches)</h3><div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-600"><i class="fa-solid fa-file-signature"></i></div></div><p id="kpi-termine" class="text-3xl font-bold text-slate-800">0</p></div>
                 </div>
-
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     <div class="bg-white p-4 rounded-2xl border border-red-100 shadow-sm"><h2 class="text-lg font-bold text-red-600 mb-4 flex items-center"><i class="fa-solid fa-fire mr-2"></i> Urgences & Retards</h2><div id="urgent-tasks-container" class="space-y-3 max-h-[450px] overflow-y-auto custom-scroll pr-2"></div></div>
                     <div class="bg-white p-4 rounded-2xl border border-blue-100 shadow-sm"><h2 class="text-lg font-bold text-brand-600 mb-4 flex items-center"><i class="fa-solid fa-calendar-check mr-2"></i> Préventif à venir</h2><div id="upcoming-tasks-container" class="space-y-3 max-h-[450px] overflow-y-auto custom-scroll pr-2"></div></div>
@@ -128,6 +132,7 @@
                 </div>
             </div>
 
+            <!-- VUE PLANNING -->
             <div id="view-planning" class="app-view hidden flex-col h-full w-full">
                 <header class="mb-4 flex flex-col xl:flex-row justify-between items-start xl:items-end space-y-4 xl:space-y-0 shrink-0">
                     <div><h2 class="text-2xl font-bold text-slate-800">Calendrier Global</h2></div>
@@ -139,8 +144,10 @@
                 <div class="bg-white p-2 md:p-4 rounded-2xl shadow-sm border border-slate-100 flex-1 overflow-hidden flex flex-col min-h-[65vh]"><div id="calendar" class="flex-1 w-full h-full"></div></div>
             </div>
 
+            <!-- VUE CURATIF -->
             <div id="view-curatif" class="app-view hidden"><header class="mb-6"><h2 class="text-2xl font-bold text-slate-800">Interventions Curatives</h2></header><div id="curatif-container" class="space-y-3"></div></div>
 
+            <!-- VUE HYPERTHERM -->
             <div id="view-hypertherm" class="app-view hidden flex-col h-full w-full">
                 <header class="mb-6">
                     <h2 class="text-2xl font-bold text-slate-800 flex items-center"><i class="fa-solid fa-fire-flame-curved text-amber-500 mr-3"></i> Centre d'Expertise Hypertherm</h2>
@@ -171,6 +178,7 @@
                 <div id="hypertherm-container" class="grid grid-cols-1 gap-6 pb-12"></div>
             </div>
 
+            <!-- VUE GESTION DU PARC -->
             <div id="view-parc" class="app-view hidden">
                 <header class="mb-6"><h2 class="text-2xl font-bold text-slate-800">Gestion du Parc Clients</h2></header>
                 <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 mb-6">
@@ -182,12 +190,20 @@
                 <div id="parc-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
             </div>
 
+            <!-- LE BLOC RESTAURÉ : BASE DOCUMENTAIRE -->
+            <div id="view-docs" class="app-view hidden">
+                <header class="mb-6"><h2 class="text-2xl font-bold text-slate-800">Base Documentaire Technique</h2></header>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="docsGridContainer"></div>
+            </div>
+
+            <!-- VUE FICHES INTERVENTION -->
             <div id="view-fiches" class="app-view hidden flex-col w-full max-w-5xl mx-auto">
                 <header class="mb-6 flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
                     <div><h2 class="text-2xl font-bold text-slate-800"><i class="fa-solid fa-clipboard-list text-brand-500 mr-2"></i> Éditeur de Fiche SAV</h2></div>
                     <button type="button" data-act="new-fiche" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl"><i class="fa-solid fa-file-circle-plus mr-2"></i> Nouvelle fiche</button>
                 </header>
                 <div id="ficheEditBanner" class="hidden mb-6 bg-amber-50 border border-amber-200 text-amber-900 p-4 rounded-2xl text-sm font-medium flex items-center gap-3"><i class="fa-solid fa-pen-to-square text-amber-500 text-lg"></i><span id="ficheEditBannerText"></span></div>
+                
                 <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-100">
                     <div class="border-2 border-dashed border-brand-300 p-6 rounded-xl bg-brand-50 mb-8 text-center transition hover:bg-brand-100">
                         <p class="text-brand-800 font-bold mb-3"><i class="fa-solid fa-camera mr-2"></i> Scanner la fiche générée par le système</p>
@@ -234,6 +250,7 @@
                 </div>
             </div>
 
+            <!-- VUE HISTORIQUE -->
             <div id="view-historique" class="app-view hidden flex-col w-full max-w-5xl mx-auto">
                 <header class="mb-6 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
                     <h2 class="text-2xl font-bold text-slate-800"><i class="fa-solid fa-box-archive text-brand-500 mr-2"></i> Historique des Fiches</h2>
@@ -304,6 +321,10 @@
         <a href="#" data-view="curatif" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-triangle-exclamation text-lg mb-1"></i><span class="text-[9px] font-medium">Curatif</span></a>
         <a href="#" data-view="parc" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-industry text-lg mb-1"></i><span class="text-[9px] font-medium">Parc</span></a>
         <a href="#" data-view="hypertherm" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-fire-flame-curved text-lg mb-1 text-amber-500"></i><span class="text-[9px] font-medium">HT</span></a>
+        
+        <!-- LA LIGNE RESTAURÉE MOBILE ! -->
+        <a href="#" data-view="docs" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-book-open text-lg mb-1"></i><span class="text-[9px] font-medium">Doc.</span></a>
+        
         <a href="#" data-view="fiches" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-clipboard-list text-lg mb-1"></i><span class="text-[9px] font-medium">Fiches</span></a>
         <a href="#" data-view="historique" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-box-archive text-lg mb-1"></i><span class="text-[9px] font-medium">Archives</span></a>
     </nav>
@@ -334,6 +355,6 @@
         </div>
     </div>
 
-    <script type="module" src="app.js?v=40"></script>
+    <script type="module" src="app.js?v=41"></script>
 </body>
 </html>
