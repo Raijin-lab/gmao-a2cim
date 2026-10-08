@@ -62,13 +62,19 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // ---------- Historique des fiches : écriture seule, jamais modifiable ----------
+    // ---------- Historique des fiches : modifiable par admin/auteur, jamais supprimable ----------
     match /historique_interventions/{id} {
       allow read: if isActive();
       allow create: if isActive()
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.numero_fisav is string;
-      allow update, delete: if false;
+      // Correction d'une fiche : admin (toutes) ou auteur (la sienne). Auteur et date de création non modifiables. Jamais de suppression.
+      allow update: if isActive()
+        && (isAdmin() || resource.data.get('uid', '') == request.auth.uid)
+        && request.resource.data.get('uid', null) == resource.data.get('uid', null)
+        && request.resource.data.get('timestamp_creation', null) == resource.data.get('timestamp_creation', null)
+        && request.resource.data.numero_fisav is string;
+      allow delete: if false;
     }
 
     // ---------- Tout le reste est interdit ----------

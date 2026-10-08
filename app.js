@@ -4,7 +4,7 @@
 // =====================================================================
 import {
   collection, addDoc, setDoc, getDoc, deleteDoc, updateDoc, doc, onSnapshot, query, orderBy,
-  serverTimestamp, arrayUnion, arrayRemove, writeBatch
+  serverTimestamp, arrayUnion, arrayRemove, writeBatch, limit
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { db, authReady, logout } from "./firebase-init.js";
 
@@ -92,7 +92,11 @@ let tempKitPieces = [];
 let fullCalendarInstance = null;
 let currentClientFilter = "ALL";
 let currentTypeFilter = "ALL";
+let historiqueDB = [];
+let historiqueFilter = "";
+let currentFicheId = null;   // non nul = on modifie une fiche déjà enregistrée
 window.__pendingArchive = [];
+const withTimeout = (p, ms = 4000) => Promise.race([p, new Promise((res) => setTimeout(() => res("timeout"), ms))]);
 
 // ---------------------------------------------------------------------
 // ÉCRITURES SÛRES (anti-doublons)
@@ -539,6 +543,7 @@ function redigerFicheGlobaleTerminee(groupKey) {
     });
   });
   window.__pendingArchive = g.machines.map((m) => m.id);
+  setEditMode(null);
 
   $("input_fisav").value = ""; $("input_reference").value = "";
   $("input_client").value = g.client;
@@ -635,8 +640,8 @@ navLinks.forEach((link) => link.addEventListener("click", (e) => { e.preventDefa
 // ---------------------------------------------------------------------
 // FICHE D'INTERVENTION (SAISIE, OCR, IMPRESSION)
 // ---------------------------------------------------------------------
-function techRowHTML(name = "") {
-  return `<div class="flex items-center gap-3 mb-2 tech-row"><input type="text" class="tech-name w-1/2 p-2 border border-slate-300 rounded-lg text-sm bg-white font-bold" placeholder="Nom" value="${esc(name)}"><input type="number" class="tech-qty-val w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white" placeholder="Qté" value="1" step="0.5" min="0"><select class="tech-qty-unit w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white"><option value="Heure(s)">Heure(s)</option><option value="Jour(s)">Jour(s)</option></select><button type="button" data-act="rm-tech" class="text-red-500 hover:text-red-700 font-bold px-2">X</button></div>`;
+function techRowHTML(name = "", qty = 1, unit = "Heure(s)") {
+  return `<div class="flex items-center gap-3 mb-2 tech-row"><input type="text" class="tech-name w-1/2 p-2 border border-slate-300 rounded-lg text-sm bg-white font-bold" placeholder="Nom" value="${esc(name)}"><input type="number" class="tech-qty-val w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white" placeholder="Qté" value="${esc(qty)}" step="0.5" min="0"><select class="tech-qty-unit w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white"><option value="Heure(s)"${unit === "Heure(s)" ? " selected" : ""}>Heure(s)</option><option value="Jour(s)"${unit === "Jour(s)" ? " selected" : ""}>Jour(s)</option></select><button type="button" data-act="rm-tech" class="text-red-500 hover:text-red-700 font-bold px-2">X</button></div>`;
 }
 // insertAdjacentHTML : ne perd plus les valeurs déjà saisies (l'ancien innerHTML += les effaçait)
 window.addFicheTechnician = function () { $("fiche-tech-list").insertAdjacentHTML("beforeend", techRowHTML()); };
@@ -722,13 +727,30 @@ window.prepareAndPrint = async function () {
   const total = totalQty > 0 ? `${totalQty}${currentUnit === "Heure(s)" ? " H" : " J"}` : "0,00";
   $("p_somme_reporter").innerText = total;
 
+  const payload = {
+    numero_fisav: fisavRaw, reference_intervention: reference, client: clientRaw, machine: machineRaw,
+    date_intervention: dateRaw, date_tirage: `${dateTirage} ${heureTirage}`,
+    forfait_ref: refForfait, forfait_nom: nomForfait, forfait_diag: diagForfait, diagnostic: diagForfait,
+    travaux_realises: travaux, techniciens_intervenants: detailTechniciens, total_temps: total
+  };
   try {
-    await addDoc(collection(db, "historique_interventions"), {
-      numero_fisav: fisavRaw, reference_intervention: reference, client: clientRaw, machine: machineRaw,
-      date_intervention: dateRaw, date_tirage: `${dateTirage} ${heureTirage}`, diagnostic: diagForfait,
-      travaux_realises: travaux, techniciens_intervenants: detailTechniciens, total_temps: total,
-      uid: currentUser.uid, email: currentUser.email, timestamp_creation: serverTimestamp()
-    });
+    if (currentFicheId) {
+      // Fiche déjà enregistrée : on la met à jour et on garde l'ancienne version dans "revisions"
+      const prev = historiqueDB.find((h) => h.id === currentFicheId);
+      const upd = { ...payload, modifie_le: serverTimestamp(), modifie_par: currentUser.email };
+      if (prev) {
+        upd.revisions = arrayUnion({
+          date: new Date().toISOString(), par: currentUser.email,
+          avant: { numero_fisav: prev.numero_fisav ?? null, travaux_realises: prev.travaux_realises ?? null, techniciens_intervenants: prev.techniciens_intervenants ?? [], total_temps: prev.total_temps ?? null }
+        });
+      }
+      await withTimeout(updateDoc(doc(db, "historique_interventions", currentFicheId), upd));
+    } else {
+      // Nouvelle fiche : ID créé côté appareil (l'impression n'est pas bloquée hors-ligne)
+      const newRef = doc(collection(db, "historique_interventions"));
+      await withTimeout(setDoc(newRef, { ...payload, interventions_ids: [...(window.__pendingArchive || [])], uid: currentUser.uid, email: currentUser.email, timestamp_creation: serverTimestamp() }));
+      setEditMode(newRef.id);
+    }
   } catch (err) {
     console.error("Erreur historique :", err);
     if (!confirm("L'historique n'a pas pu être enregistré (" + (err.code || err.message) + ").\nImprimer quand même ?")) { resetBtn(); return; }
@@ -743,6 +765,70 @@ window.prepareAndPrint = async function () {
   setTimeout(() => window.print(), 300);
   setTimeout(resetBtn, 20000);
 };
+
+// ---------------------------------------------------------------------
+// HISTORIQUE DES FICHES (consultation, correction, réimpression)
+// ---------------------------------------------------------------------
+onSnapshot(query(collection(db, "historique_interventions"), orderBy("timestamp_creation", "desc"), limit(300)), (snapshot) => {
+  historiqueDB = [];
+  snapshot.forEach((d) => historiqueDB.push({ ...d.data(), id: d.id }));
+  renderHistorique();
+}, onListenError("historique"));
+
+function renderHistorique() {
+  const c = $("historique-container"); if (!c) return;
+  const q = historiqueFilter.trim().toLowerCase();
+  const list = historiqueDB.filter((h) => !q || [h.numero_fisav, h.client, h.machine, h.reference_intervention].some((v) => String(v ?? "").toLowerCase().includes(q)));
+  if ($("historique-count")) $("historique-count").textContent = `${list.length} fiche(s)`;
+  if (list.length === 0) { c.innerHTML = '<p class="text-slate-400 text-sm italic py-4 text-center">Aucune fiche trouvée.</p>'; return; }
+  c.innerHTML = list.map((h) => {
+    const date = h.date_intervention ? parseLocal(h.date_intervention).toLocaleDateString("fr-FR") : "";
+    const techs = (h.techniciens_intervenants || []).map((t) => t.nom).join(", ");
+    const canEdit = isAdmin || h.uid === currentUser.uid;
+    const badge = h.modifie_par ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 uppercase">Modifiée</span>' : "";
+    const btn = canEdit ? `<button data-act="open-fiche" data-id="${esc(h.id)}" class="shrink-0 px-3 py-2 bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold rounded-lg"><i class="fa-solid fa-pen-to-square mr-1"></i> Modifier</button>` : "";
+    return `<div class="bg-white rounded-xl shadow-sm border border-slate-100 p-4 flex items-center justify-between gap-3"><div class="min-w-0"><div class="flex items-center gap-2 mb-1 flex-wrap"><span class="font-bold text-slate-800">${esc(h.numero_fisav)}</span>${badge}</div><p class="text-sm font-semibold text-brand-900 uppercase truncate">${esc(h.client)}</p><p class="text-xs text-slate-500 truncate"><i class="fa-solid fa-microchip mr-1"></i>${esc(h.machine)}</p><p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-calendar-day mr-1"></i>${esc(date)} &nbsp;|&nbsp; <i class="fa-solid fa-user-gear mr-1"></i>${esc(techs)} &nbsp;|&nbsp; ${esc(h.total_temps || "")}</p></div>${btn}</div>`;
+  }).join("");
+}
+
+function setEditMode(id) {
+  currentFicheId = id;
+  const banner = $("ficheEditBanner"); if (!banner) return;
+  if (id) {
+    const h = historiqueDB.find((x) => x.id === id);
+    $("ficheEditBannerText").textContent = (h ? `Fiche ${h.numero_fisav} enregistrée. ` : "Fiche enregistrée. ") + "Toute nouvelle impression remplace cette fiche (l'ancienne version reste conservée). Pour une autre fiche, cliquez sur « Nouvelle fiche ».";
+    banner.classList.remove("hidden");
+  } else { banner.classList.add("hidden"); }
+}
+
+function openFiche(id) {
+  const h = historiqueDB.find((x) => x.id === id); if (!h) return;
+  const diag = h.forfait_diag || h.diagnostic || "";
+  const preventif = /pr[ée]ventive/i.test(diag);
+  const [dT, hT] = String(h.date_tirage || "").split(" ");
+  $("input_fisav").value = h.numero_fisav || ""; $("input_reference").value = h.reference_intervention || "";
+  $("input_client").value = h.client || ""; $("input_machine").value = h.machine || "";
+  $("input_date").value = h.date_intervention || localDateStr();
+  $("input_date_tirage").value = dT || localDateStr(); $("input_heure_tirage").value = hT || "";
+  $("input_forfait_ref").value = h.forfait_ref || (preventif ? "PREV" : "DEPAN");
+  $("input_forfait_nom").value = h.forfait_nom || (preventif ? "SAV-Préventif" : "SAV-Depannage");
+  $("input_forfait_diag").value = diag;
+  $("input_travaux").value = h.travaux_realises || "";
+  $("fiche-tech-list").innerHTML = (h.techniciens_intervenants || []).map((t) => techRowHTML(t.nom, t.quantite, t.unite)).join("");
+  window.__pendingArchive = [];
+  setEditMode(id);
+  showView("fiches");
+}
+
+function newFiche() {
+  if (!confirm("Vider le formulaire et commencer une nouvelle fiche ?")) return;
+  setEditMode(null); window.__pendingArchive = [];
+  ["input_fisav", "input_reference", "input_client", "input_machine", "input_travaux", "input_forfait_diag"].forEach((id) => { $(id).value = ""; });
+  $("input_forfait_ref").value = "DEPAN"; $("input_forfait_nom").value = "SAV-Depannage";
+  $("input_date").value = localDateStr(); $("fiche-tech-list").innerHTML = "";
+}
+
+if ($("historiqueSearch")) $("historiqueSearch").addEventListener("input", (e) => { historiqueFilter = e.target.value; renderHistorique(); });
 
 // ---------------------------------------------------------------------
 // ÉCOUTEURS DÉLÉGUÉS (remplacent tous les onclick/onsubmit inline dynamiques)
@@ -761,6 +847,8 @@ document.addEventListener("click", (e) => {
     case "fiche-globale": return redigerFicheGlobaleTerminee(key);
     case "rm-tech": return el.closest(".tech-row").remove();
     case "logout": return logout();
+    case "open-fiche": return openFiche(id);
+    case "new-fiche": return newFiche();
     case "del-piece":
       tempKitPieces = tempKitPieces.filter((p) => !(p.ref === ref && p.nom === nom));
       return afficherPiecesKitTemp();

@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1e3a8a">
     <title>GMAO pro A2CIM - Tableau de bord</title>
 
-    <link rel="stylesheet" href="style.css?v=39">
+    <link rel="stylesheet" href="style.css?v=40">
     <link rel="manifest" href="manifest.json">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -102,6 +102,7 @@
             <a href="#" data-view="parc" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-industry w-6 text-center"></i><span class="font-medium">Gestion du Parc</span></a>
             <a href="#" data-view="hypertherm" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-fire-flame-curved w-6 text-center text-amber-500"></i><span class="font-medium">Expertise HT</span></a>
             <a href="#" data-view="fiches" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-clipboard-list w-6 text-center"></i><span class="font-medium">Fiches Interv.</span></a>
+            <a href="#" data-view="historique" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-box-archive w-6 text-center"></i><span class="font-medium">Historique</span></a>
         </nav>
     </aside>
 
@@ -184,7 +185,9 @@
             <div id="view-fiches" class="app-view hidden flex-col w-full max-w-5xl mx-auto">
                 <header class="mb-6 flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
                     <div><h2 class="text-2xl font-bold text-slate-800"><i class="fa-solid fa-clipboard-list text-brand-500 mr-2"></i> Éditeur de Fiche SAV</h2></div>
+                    <button type="button" data-act="new-fiche" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl"><i class="fa-solid fa-file-circle-plus mr-2"></i> Nouvelle fiche</button>
                 </header>
+                <div id="ficheEditBanner" class="hidden mb-6 bg-amber-50 border border-amber-200 text-amber-900 p-4 rounded-2xl text-sm font-medium flex items-center gap-3"><i class="fa-solid fa-pen-to-square text-amber-500 text-lg"></i><span id="ficheEditBannerText"></span></div>
                 <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-100">
                     <div class="border-2 border-dashed border-brand-300 p-6 rounded-xl bg-brand-50 mb-8 text-center transition hover:bg-brand-100">
                         <p class="text-brand-800 font-bold mb-3"><i class="fa-solid fa-camera mr-2"></i> Scanner la fiche générée par le système</p>
@@ -229,6 +232,15 @@
                         <button class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-4 rounded-xl shadow-lg transition-transform transform hover:-translate-y-1" onclick="sendWhatsApp()"><i class="fa-brands fa-whatsapp text-lg mr-2"></i> Partager via WhatsApp</button>
                     </div>
                 </div>
+            </div>
+
+            <div id="view-historique" class="app-view hidden flex-col w-full max-w-5xl mx-auto">
+                <header class="mb-6 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                    <h2 class="text-2xl font-bold text-slate-800"><i class="fa-solid fa-box-archive text-brand-500 mr-2"></i> Historique des Fiches</h2>
+                    <p class="text-slate-500 text-sm mt-1">Toutes les fiches enregistrées. Ouvrez une fiche pour corriger les travaux ou les heures, puis réimprimez-la.</p>
+                    <div class="flex gap-3 mt-4 items-center"><input type="search" id="historiqueSearch" placeholder="Rechercher : N° FISAV, client, machine..." class="flex-1 px-4 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-brand-500"><span id="historique-count" class="text-xs text-slate-500 whitespace-nowrap"></span></div>
+                </header>
+                <div id="historique-container" class="space-y-3 pb-24"></div>
             </div>
 
             <button id="addInterventionBtn" class="fixed bottom-20 md:bottom-8 right-4 md:right-8 w-14 h-14 bg-brand-500 hover:bg-brand-600 text-white rounded-full shadow-lg flex items-center justify-center text-2xl z-40 transition-all duration-300 scale-100"><i class="fa-solid fa-plus"></i></button>
@@ -293,6 +305,7 @@
         <a href="#" data-view="parc" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-industry text-lg mb-1"></i><span class="text-[9px] font-medium">Parc</span></a>
         <a href="#" data-view="hypertherm" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-fire-flame-curved text-lg mb-1 text-amber-500"></i><span class="text-[9px] font-medium">HT</span></a>
         <a href="#" data-view="fiches" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-clipboard-list text-lg mb-1"></i><span class="text-[9px] font-medium">Fiches</span></a>
+        <a href="#" data-view="historique" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-box-archive text-lg mb-1"></i><span class="text-[9px] font-medium">Archives</span></a>
     </nav>
 
     <!-- ================= DOCUMENT PDF A IMPRIMER ================= -->
@@ -321,6 +334,6 @@
         </div>
     </div>
 
-    <script type="module" src="app.js?v=39"></script>
+    <script type="module" src="app.js?v=40"></script>
 </body>
 </html>
