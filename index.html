@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1e3a8a">
     <title>GMAO pro A2CIM - Tableau de bord</title>
 
-    <link rel="stylesheet" href="style.css?v=42">
+    <link rel="stylesheet" href="style.css?v=43">
     <link rel="manifest" href="manifest.json">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -104,6 +104,7 @@
             <a href="#" data-view="hypertherm" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-fire-flame-curved w-6 text-center text-amber-500"></i><span class="font-medium">Expertise HT</span></a>
             <a href="#" data-view="docs" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-book-open w-6 text-center"></i><span class="font-medium">Base Doc.</span></a>
             <a href="#" data-view="fiches" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-clipboard-list w-6 text-center"></i><span class="font-medium">Fiches Interv.</span></a>
+            <a href="#" data-view="historique" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-box-archive w-6 text-center"></i><span class="font-medium">Historique</span></a>
         </nav>
     </aside>
 
@@ -186,7 +187,7 @@
                 <div id="parc-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
             </div>
 
-            <!-- VUE BASE DOCUMENTAIRE (RÉTABLIE) -->
+            <!-- VUE BASE DOCUMENTAIRE -->
             <div id="view-docs" class="app-view hidden">
                 <header class="mb-6"><h2 class="text-2xl font-bold text-slate-800">Base Documentaire Technique</h2></header>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="docsGridContainer">
@@ -382,6 +383,6 @@
         </div>
     </div>
 
-    <script type="module" src="app.js?v=42"></script>
+    <script type="module" src="app.js?v=43"></script>
 </body>
 </html>
