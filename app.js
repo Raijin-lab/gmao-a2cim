@@ -1,569 +1,790 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot, query, orderBy, serverTimestamp, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+// =====================================================================
+// GMAO pro A2CIM - app.js (version sécurisée)
+// Prérequis : firebase-init.js, firestore.rules, nouveau #lockScreen dans index.html
+// =====================================================================
+import {
+  collection, addDoc, setDoc, getDoc, deleteDoc, updateDoc, doc, onSnapshot, query, orderBy,
+  serverTimestamp, arrayUnion, arrayRemove, writeBatch
+} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { db, authReady, logout } from "./firebase-init.js";
 
-const firebaseConfig = {
-    apiKey: "AIzaSyAvKqfjnjJ4a64QpK2Idt2ms32E0zALFJ4",
-    authDomain: "gmao-a2cim.firebaseapp.com",
-    projectId: "gmao-a2cim",
-    storageBucket: "gmao-a2cim.firebasestorage.app",
-    messagingSenderId: "687654110395",
-    appId: "1:687654110395:web:5ce86666b10c3ad028d59e"
+// ---------------------------------------------------------------------
+// UTILITAIRES
+// ---------------------------------------------------------------------
+const esc = (s) => String(s ?? "")
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+const $ = (id) => document.getElementById(id);
+const p2 = (n) => String(n).padStart(2, "0");
+const localDateStr = (d = new Date()) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+const parseLocal = (s) => { const [y, m, d] = String(s).split("-").map(Number); return new Date(y, (m || 1) - 1, d || 1); };
+const recurrenceId = (...parts) => parts.join("__").replace(/[^\w-]/g, "_");
+const kitKey = (c, m) => `${c}||${m}`;
+const SPINNER = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>';
+
+function addMonths(d, n) {
+  const r = new Date(d.getFullYear(), d.getMonth() + n, 1);
+  const last = new Date(r.getFullYear(), r.getMonth() + 1, 0).getDate();
+  r.setDate(Math.min(d.getDate(), last));
+  return r;
+}
+
+function toast(msg, type = "info") {
+  const el = document.createElement("div");
+  const color = type === "error" ? "bg-red-600" : type === "success" ? "bg-green-600" : "bg-slate-800";
+  el.className = `fixed top-4 left-1/2 -translate-x-1/2 z-[100] px-4 py-3 rounded-xl shadow-lg text-sm font-bold text-white max-w-[90vw] ${color}`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 4500);
+}
+const onListenError = (label) => (err) => {
+  console.error(label, err);
+  toast(`Synchronisation impossible (${label}) : ${err.code || err.message}`, "error");
+};
+window.addEventListener("offline", () => toast("Hors-ligne : les modifications seront synchronisées au retour du réseau."));
+window.addEventListener("online", () => toast("Connexion rétablie.", "success"));
+
+// ---------------------------------------------------------------------
+// AUTHENTIFICATION & RÔLE
+// ---------------------------------------------------------------------
+const currentUser = await authReady;
+let isAdmin = false;
+try {
+  const snap = await getDoc(doc(db, "users", currentUser.uid));
+  if (!snap.exists()) {
+    alert("Compte non autorisé : aucun profil n'a été créé pour cet utilisateur. Contactez l'administrateur.");
+    await logout();
+  } else {
+    const role = snap.data().role;
+    isAdmin = role === "admin";
+    localStorage.setItem("gmao_role_" + currentUser.uid, role);
+  }
+} catch (err) {
+  // Hors-ligne : on reprend le dernier rôle connu (les règles Firestore restent le vrai verrou)
+  isAdmin = localStorage.getItem("gmao_role_" + currentUser.uid) === "admin";
+}
+
+function applyRoleUI() {
+  if (!isAdmin) {
+    ["formAddClient", "formAddHypertherm"].forEach((id) => { const f = $(id); if (f && f.parentElement) f.parentElement.classList.add("hidden"); });
+  }
+  const aside = document.querySelector("aside");
+  const info = `<div class="text-xs text-blue-200 mb-2 truncate">${esc(currentUser.email)} · ${isAdmin ? "Admin" : "Technicien"}</div>`;
+  if (aside) {
+    aside.insertAdjacentHTML("beforeend", `<div class="p-4 border-t border-brand-800">${info}<button data-act="logout" class="w-full text-left px-4 py-2 text-sm text-brand-100 hover:bg-brand-800 rounded-xl"><i class="fa-solid fa-right-from-bracket mr-2"></i>Déconnexion</button></div>`);
+  }
+  const mobileHeader = document.querySelector("div.flex-1 > header");
+  if (mobileHeader) mobileHeader.insertAdjacentHTML("beforeend", `<button data-act="logout" class="text-blue-200 text-sm"><i class="fa-solid fa-right-from-bracket"></i></button>`);
+}
+applyRoleUI();
+
+// ---------------------------------------------------------------------
+// ÉTAT GLOBAL
+// ---------------------------------------------------------------------
+let allInterventions = [];
+let knownIds = new Set();
+let clientsCache = [];
+let parcClientsDB = {};
+let kitsDB = {};
+let hyperthermDB = [];
+let groupedInterventionsGlobal = {};
+let tempKitPieces = [];
+let fullCalendarInstance = null;
+let currentClientFilter = "ALL";
+let currentTypeFilter = "ALL";
+window.__pendingArchive = [];
+
+// ---------------------------------------------------------------------
+// ÉCRITURES SÛRES (anti-doublons)
+// ---------------------------------------------------------------------
+function isDuplicate(c, m, d, t) {
+  return allInterventions.some((i) => i.client === c && i.machine === m && i.date === d && i.type === t && i.statut === "Planifié");
+}
+
+async function createIntervention(data) {
+  const id = recurrenceId(data.client, data.machine, data.date, data.type);
+  if (knownIds.has(id) || isDuplicate(data.client, data.machine, data.date, data.type)) return false;
+  await setDoc(doc(db, "interventions", id), { ...data, timestamp: serverTimestamp() });
+  knownIds.add(id);
+  return true;
+}
+
+async function upsertKit(client, machine, pieces) {
+  const existing = kitsDB[kitKey(client, machine)];
+  if (existing) await updateDoc(doc(db, "kits", existing.id), { pieces });
+  else await addDoc(collection(db, "kits"), { client, machine, pieces });
+}
+
+// ---------------------------------------------------------------------
+// KITS (NOMENCLATURE)
+// ---------------------------------------------------------------------
+onSnapshot(query(collection(db, "kits")), (snapshot) => {
+  kitsDB = {};
+  snapshot.forEach((d) => { const x = d.data(); kitsDB[kitKey(x.client, x.machine)] = { id: d.id, pieces: x.pieces || [] }; });
+  renderParc();
+}, onListenError("kits"));
+
+window.ouvrirModalKit = function (client, machine) {
+  $("kitModalMachineName").textContent = `${client} | ${machine}`;
+  $("currentKitClient").value = client;
+  $("currentKitMachine").value = machine;
+  const existing = kitsDB[kitKey(client, machine)];
+  tempKitPieces = existing ? [...existing.pieces] : [];
+  afficherPiecesKitTemp();
+  $("kitModal").classList.remove("hidden"); $("kitModal").classList.add("flex");
+};
+window.fermerKitModal = function () { $("kitModal").classList.add("hidden"); $("kitModal").classList.remove("flex"); };
+
+window.ajouterPieceAuKitTemp = function () {
+  const ref = $("kitNewRef").value.trim() || "N/A";
+  const nom = $("kitNewNom").value.trim();
+  const qte = parseInt($("qtePieceKit").value, 10);
+  if (!nom || !(qte >= 1)) return toast("Saisissez au moins la désignation et une quantité valide.", "error");
+  const idx = tempKitPieces.findIndex((p) => p.ref === ref && p.nom === nom);
+  if (idx >= 0) tempKitPieces[idx].qte = qte; else tempKitPieces.push({ ref, nom, qte });
+  $("kitNewRef").value = ""; $("kitNewNom").value = ""; $("qtePieceKit").value = "1";
+  afficherPiecesKitTemp();
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-
-let allInterventions = []; let parcClientsDB = {}; let fullCalendarInstance = null; let currentClientFilter = "ALL"; let currentTypeFilter = "ALL"; let kitsDB = {}; let tempKitPieces = []; let groupedInterventionsGlobal = {}; let hyperthermDB = [];
-
-// --- GESTION DU CODE PIN ---
-const CORRECT_PIN = "A2CIM2026";
-if (document.getElementById('pinForm')) {
-    document.getElementById('pinForm').addEventListener('submit', (e) => {
-        e.preventDefault();
-        if (document.getElementById('pinInput').value.trim() === CORRECT_PIN) {
-            const lock = document.getElementById('lockScreen'); lock.classList.add('opacity-0'); setTimeout(() => lock.remove(), 300);
-        } else { document.getElementById('pinError').classList.remove('hidden'); }
-    });
-}
-
-// ==========================================
-// MOTEUR DES KITS (Nomenclature sans Stock)
-// ==========================================
-const qKits = query(collection(db, "kits"));
-onSnapshot(qKits, (snapshot) => { kitsDB = {}; snapshot.forEach(docSnap => { const data = docSnap.data(); kitsDB[data.client + "_" + data.machine] = { id: docSnap.id, pieces: data.pieces }; }); });
-
-window.ouvrirModalKit = function(client, machine) {
-    document.getElementById('kitModalMachineName').textContent = `${client} | ${machine}`; document.getElementById('currentKitClient').value = client; document.getElementById('currentKitMachine').value = machine;
-    const kitExistant = kitsDB[client + "_" + machine]; tempKitPieces = kitExistant ? [...kitExistant.pieces] : []; afficherPiecesKitTemp();
-    document.getElementById('kitModal').classList.remove('hidden'); document.getElementById('kitModal').classList.add('flex');
-}
-window.fermerKitModal = function() { document.getElementById('kitModal').classList.add('hidden'); document.getElementById('kitModal').classList.remove('flex'); }
-window.ajouterPieceAuKitTemp = function() {
-    const ref = document.getElementById('kitNewRef').value.trim() || "N/A"; const nom = document.getElementById('kitNewNom').value.trim(); const qte = parseInt(document.getElementById('qtePieceKit').value);
-    if (!nom || qte < 1) return alert("Veuillez saisir au moins la désignation et la quantité.");
-    const existingIndex = tempKitPieces.findIndex(p => p.ref === ref && p.nom === nom);
-    if (existingIndex >= 0) { tempKitPieces[existingIndex].qte = qte; } else { tempKitPieces.push({ ref: ref, nom: nom, qte: qte }); }
-    document.getElementById('kitNewRef').value = ''; document.getElementById('kitNewNom').value = ''; document.getElementById('qtePieceKit').value = '1'; afficherPiecesKitTemp();
-}
-window.retirerPieceDuKitTemp = function(ref, nom) { tempKitPieces = tempKitPieces.filter(p => !(p.ref === ref && p.nom === nom)); afficherPiecesKitTemp(); }
 function afficherPiecesKitTemp() {
-    const ul = document.getElementById('listePiecesKitTemp'); ul.innerHTML = '';
-    if (tempKitPieces.length === 0) { ul.innerHTML = '<li class="text-sm text-slate-400 italic text-center py-2">Aucune pièce associée.</li>'; return; }
-    tempKitPieces.forEach(p => { ul.innerHTML += `<li class="flex justify-between items-center bg-slate-50 border border-slate-100 p-2 rounded text-sm"><span><strong>${p.qte}x</strong> [${p.ref}] ${p.nom}</span><button onclick="retirerPieceDuKitTemp('${p.ref}', '${p.nom}')" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-xmark"></i></button></li>`; });
-}
-window.sauvegarderKitFinal = async function() {
-    const client = document.getElementById('currentKitClient').value; const machine = document.getElementById('currentKitMachine').value; const existingKit = kitsDB[client + "_" + machine];
-    if (existingKit) { await updateDoc(doc(db, "kits", existingKit.id), { pieces: tempKitPieces }); } else { await addDoc(collection(db, "kits"), { client: client, machine: machine, pieces: tempKitPieces }); }
-    alert("Nomenclature enregistrée !"); fermerKitModal();
+  const ul = $("listePiecesKitTemp");
+  if (tempKitPieces.length === 0) { ul.innerHTML = '<li class="text-sm text-slate-400 italic text-center py-2">Aucune pièce associée.</li>'; return; }
+  ul.innerHTML = tempKitPieces.map((p) =>
+    `<li class="flex justify-between items-center bg-slate-50 border border-slate-100 p-2 rounded text-sm"><span><strong>${esc(p.qte)}x</strong> [${esc(p.ref)}] ${esc(p.nom)}</span><button data-act="del-piece" data-ref="${esc(p.ref)}" data-nom="${esc(p.nom)}" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-xmark"></i></button></li>`
+  ).join("");
 }
 
-// ==========================================
-// MOTEUR PARC CLIENTS
-// ==========================================
-const qClients = query(collection(db, "clients"), orderBy("nom", "asc"));
-onSnapshot(qClients, (snapshot) => {
-    const parcContainer = document.getElementById('parc-container'); const formClientSelect = document.getElementById('formClient'); const htClientSelect = document.getElementById('htClient'); const calendarFilter = document.getElementById('calendarClientFilter');
-    if (parcContainer) parcContainer.innerHTML = ''; const currentClientSelection = formClientSelect ? formClientSelect.value : "";
-    if (formClientSelect) formClientSelect.innerHTML = '<option value="" disabled selected>Sélectionner...</option>'; if (htClientSelect) htClientSelect.innerHTML = '<option value="" disabled selected>Client...</option>'; if (calendarFilter) calendarFilter.innerHTML = '<option value="ALL">Tous les clients</option>';
-    parcClientsDB = {};
+window.sauvegarderKitFinal = async function () {
+  try {
+    await upsertKit($("currentKitClient").value, $("currentKitMachine").value, tempKitPieces);
+    toast("Nomenclature enregistrée.", "success");
+    fermerKitModal();
+  } catch (err) { console.error(err); toast("Enregistrement refusé : " + (err.code || err.message), "error"); }
+};
 
-    snapshot.forEach(docSnap => {
-        const data = docSnap.data(); const docId = docSnap.id; const machines = data.machines || [];
-        parcClientsDB[data.nom] = { id: docId, machines: machines };
-        if (formClientSelect) formClientSelect.innerHTML += `<option value="${data.nom}">${data.nom}</option>`; if (htClientSelect) htClientSelect.innerHTML += `<option value="${data.nom}">${data.nom}</option>`; if (calendarFilter) calendarFilter.innerHTML += `<option value="${data.nom}">${data.nom}</option>`;
+// ---------------------------------------------------------------------
+// PARC CLIENTS
+// ---------------------------------------------------------------------
+onSnapshot(query(collection(db, "clients"), orderBy("nom", "asc")), (snapshot) => {
+  clientsCache = []; parcClientsDB = {};
+  snapshot.forEach((d) => {
+    const x = d.data();
+    const entry = { id: d.id, nom: x.nom, machines: Array.isArray(x.machines) ? x.machines : [] };
+    clientsCache.push(entry);
+    parcClientsDB[x.nom] = { id: d.id, machines: entry.machines };
+  });
+  renderClientSelects();
+  renderParc();
+}, onListenError("clients"));
 
-        let machinesListHTML = '';
-        if (machines.length === 0) { machinesListHTML = '<p class="text-xs text-slate-400 italic mb-2">Aucune machine.</p>'; } 
-        else {
-            machines.forEach(m => {
-                const hasKit = kitsDB[data.nom + "_" + m] && kitsDB[data.nom + "_" + m].pieces.length > 0; const iconColor = hasKit ? "text-brand-500" : "text-slate-300";
-                machinesListHTML += `<div class="flex items-center justify-between bg-slate-50 px-3 py-2 rounded-lg mb-2 border border-slate-100"><span class="text-sm text-slate-700 font-medium truncate flex-1"><i class="fa-solid fa-microchip text-slate-400 mr-2"></i>${m}</span><div class="flex items-center space-x-2 shrink-0"><button onclick="ouvrirModalKit('${data.nom}', '${m}')" class="px-2 py-1 bg-white border border-slate-200 rounded hover:bg-slate-100"><i class="fa-solid fa-boxes-stacked ${iconColor}"></i></button><button onclick="supprimerMachineParc('${docId}', '${m}')" class="text-slate-300 hover:text-red-500 px-1"><i class="fa-solid fa-xmark"></i></button></div></div>`;
-            });
-        }
-        if (parcContainer) { parcContainer.innerHTML += `<div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col relative h-full"><button onclick="supprimerClientParc('${docId}')" class="absolute top-4 right-4 text-slate-300 hover:text-red-500"><i class="fa-solid fa-trash-can"></i></button><div class="p-5 border-b border-slate-100 bg-brand-50"><h3 class="text-lg font-bold text-brand-900"><i class="fa-solid fa-building mr-2 text-brand-500"></i>${data.nom}</h3></div><div class="p-5 flex-1 flex flex-col"><div class="mb-4 max-h-[200px] overflow-y-auto custom-scroll pr-2">${machinesListHTML}</div><form onsubmit="ajouterMachineParc(event, '${docId}')" class="flex gap-2 mt-auto"><input type="text" id="machineInput_${docId}" placeholder="Nom machine..." required class="flex-1 px-3 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-brand-500"><button type="submit" class="bg-slate-800 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-slate-700"><i class="fa-solid fa-plus"></i></button></form></div></div>`; }
-    });
-    if (formClientSelect && parcClientsDB[currentClientSelection]) formClientSelect.value = currentClientSelection;
-});
+function renderClientSelects() {
+  const formSel = $("formClient"), htSel = $("htClient"), calSel = $("calendarClientFilter");
+  const prevForm = formSel ? formSel.value : "";
+  const opts = clientsCache.map((c) => `<option value="${esc(c.nom)}">${esc(c.nom)}</option>`).join("");
+  if (formSel) { formSel.innerHTML = '<option value="" disabled selected>Sélectionner...</option>' + opts; if (parcClientsDB[prevForm]) formSel.value = prevForm; }
+  if (htSel) htSel.innerHTML = '<option value="" disabled selected>Client...</option>' + opts;
+  if (calSel) { calSel.innerHTML = '<option value="ALL">Tous les clients</option>' + opts; calSel.value = parcClientsDB[currentClientFilter] ? currentClientFilter : "ALL"; }
+}
 
-function syncMachinesDropdown(clientSelectId, machineSelectId, allowAll = false) {
-    const clientSelect = document.getElementById(clientSelectId); const machineSelect = document.getElementById(machineSelectId);
-    if (clientSelect && machineSelect) {
-        clientSelect.addEventListener('change', (e) => {
-            const nomClient = e.target.value; machineSelect.innerHTML = '<option value="" disabled selected>Machine...</option>';
-            if (parcClientsDB[nomClient]) {
-                if (allowAll && parcClientsDB[nomClient].machines.length > 0) { machineSelect.innerHTML += `<option value="TOUTES_LES_MACHINES" class="font-bold text-brand-600">🌟 Toutes les machines (${parcClientsDB[nomClient].machines.length})</option>`; }
-                parcClientsDB[nomClient].machines.forEach(m => { machineSelect.innerHTML += `<option value="${m}">${m}</option>`; });
-            }
-        });
+function renderParc() {
+  const container = $("parc-container"); if (!container) return;
+  container.innerHTML = clientsCache.map((cl) => {
+    const machinesHTML = cl.machines.length === 0
+      ? '<p class="text-xs text-slate-400 italic mb-2">Aucune machine.</p>'
+      : cl.machines.map((m) => {
+          const kit = kitsDB[kitKey(cl.nom, m)];
+          const iconColor = kit && kit.pieces.length > 0 ? "text-brand-500" : "text-slate-300";
+          const delBtn = isAdmin ? `<button data-act="del-machine" data-id="${esc(cl.id)}" data-machine="${esc(m)}" class="text-slate-300 hover:text-red-500 px-1"><i class="fa-solid fa-xmark"></i></button>` : "";
+          return `<div class="flex items-center justify-between bg-slate-50 px-3 py-2 rounded-lg mb-2 border border-slate-100"><span class="text-sm text-slate-700 font-medium truncate flex-1"><i class="fa-solid fa-microchip text-slate-400 mr-2"></i>${esc(m)}</span><div class="flex items-center space-x-2 shrink-0"><button data-act="kit" data-client="${esc(cl.nom)}" data-machine="${esc(m)}" class="px-2 py-1 bg-white border border-slate-200 rounded hover:bg-slate-100"><i class="fa-solid fa-boxes-stacked ${iconColor}"></i></button>${delBtn}</div></div>`;
+        }).join("");
+    const delClient = isAdmin ? `<button data-act="del-client" data-id="${esc(cl.id)}" class="absolute top-4 right-4 text-slate-300 hover:text-red-500"><i class="fa-solid fa-trash-can"></i></button>` : "";
+    const addForm = isAdmin ? `<form data-machine-form="${esc(cl.id)}" class="flex gap-2 mt-auto"><input type="text" name="machine" placeholder="Nom machine..." required class="flex-1 px-3 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-brand-500"><button type="submit" class="bg-slate-800 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-slate-700"><i class="fa-solid fa-plus"></i></button></form>` : "";
+    return `<div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col relative h-full">${delClient}<div class="p-5 border-b border-slate-100 bg-brand-50"><h3 class="text-lg font-bold text-brand-900"><i class="fa-solid fa-building mr-2 text-brand-500"></i>${esc(cl.nom)}</h3></div><div class="p-5 flex-1 flex flex-col"><div class="mb-4 max-h-[200px] overflow-y-auto custom-scroll pr-2">${machinesHTML}</div>${addForm}</div></div>`;
+  }).join("");
+}
+
+function syncMachinesDropdown(clientSelectId, machineSelectId, allowAll) {
+  const cs = $(clientSelectId), ms = $(machineSelectId);
+  if (!cs || !ms) return;
+  cs.addEventListener("change", (e) => {
+    const nom = e.target.value;
+    let html = '<option value="" disabled selected>Machine...</option>';
+    if (parcClientsDB[nom]) {
+      const list = parcClientsDB[nom].machines;
+      if (allowAll && list.length > 0) html += `<option value="TOUTES_LES_MACHINES" class="font-bold text-brand-600">🌟 Toutes les machines (${list.length})</option>`;
+      html += list.map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join("");
     }
+    ms.innerHTML = html;
+  });
 }
-syncMachinesDropdown('formClient', 'formMachine', true); syncMachinesDropdown('htClient', 'htMachine', false);
-window.ajouterMachineParc = async function(e, docId) { e.preventDefault(); const input = document.getElementById(`machineInput_${docId}`); if (!input.value.trim()) return; await updateDoc(doc(db, "clients", docId), { machines: arrayUnion(input.value.trim()) }); input.value = ''; };
-window.supprimerMachineParc = async function(docId, nomMachine) { if (confirm(`Supprimer la machine "${nomMachine}" ?`)) await updateDoc(doc(db, "clients", docId), { machines: arrayRemove(nomMachine) }); };
-window.supprimerClientParc = async function(docId) { if (confirm(`Attention : supprimer ce client ?`)) await deleteDoc(doc(db, "clients", docId)); };
-if (document.getElementById('formAddClient')) { document.getElementById('formAddClient').addEventListener('submit', async (e) => { e.preventDefault(); const input = document.getElementById('newClientName'); if (!input.value.trim()) return; await addDoc(collection(db, "clients"), { nom: input.value.trim(), machines: [] }); input.value = ''; }); }
+syncMachinesDropdown("formClient", "formMachine", true);
+syncMachinesDropdown("htClient", "htMachine", false);
 
-// ==========================================
-// LE CERVEAU TEMPOREL HYPERTHERM
-// ==========================================
+async function safe(fn, okMsg) {
+  try { await fn(); if (okMsg) toast(okMsg, "success"); }
+  catch (err) { console.error(err); toast("Action refusée ou échouée : " + (err.code || err.message), "error"); }
+}
+const ajouterMachineParc = (docId, nom) => safe(() => updateDoc(doc(db, "clients", docId), { machines: arrayUnion(nom) }));
+const supprimerMachineParc = (docId, nom) => confirm(`Supprimer la machine "${nom}" ?`) && safe(() => updateDoc(doc(db, "clients", docId), { machines: arrayRemove(nom) }));
+const supprimerClientParc = (docId) => confirm("Attention : supprimer ce client ?") && safe(() => deleteDoc(doc(db, "clients", docId)));
+
+if ($("formAddClient")) {
+  $("formAddClient").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = $("newClientName"); const nom = input.value.trim(); if (!nom) return;
+    if (parcClientsDB[nom]) return toast("Ce client existe déjà.", "error");
+    await safe(() => addDoc(collection(db, "clients"), { nom, machines: [] }));
+    input.value = "";
+  });
+}
+
+// ---------------------------------------------------------------------
+// HYPERTHERM (calcul des échéances)
+// ---------------------------------------------------------------------
+const HALF_YEAR = 182.5;
+
 function getHTRules(modele) {
-    const isStandard = (modele === "HPR260" || modele === "MAXPRO200");
-    if (isStandard) {
-        return {
-            "6M": { days: 182, parts: [{ ref: "027664", nom: "Filtre à air principal" }, { ref: "028872", nom: "Coolant (Liquide ref.)" }, { ref: "027665", nom: "Filtre liquide ref." }, { ref: "128879", nom: "Kit entretien torche Std" }] },
-            "12M": { days: 365, parts: [{ ref: "003149", nom: "Relais arc pilote" }, { ref: "003150", nom: "Contacteur principal" }, { ref: "220162", nom: "Corps de torche (Standard)" }] },
-            "24M": { days: 730, parts: [{ ref: "023274", nom: "Pompe à eau" }, { ref: "228292", nom: "Faisceaux de torche Std" }] },
-            "36M": { days: 1095, parts: [{ ref: "027666", nom: "Ventilateurs" }, { ref: "027667", nom: "Moteur pompe" }] }
-        };
-    } else {
-        return {
-            "6M": { days: 182, parts: [{ ref: "027664", nom: "Filtre à air principal" }, { ref: "028872", nom: "Coolant 70/30" }, { ref: "027665", nom: "Filtre liquide ref." }, { ref: "428383", nom: "Kit d'entretien torche XD/XPR" }] },
-            "12M": { days: 365, parts: [{ ref: "003149", nom: "Relais arc pilote" }, { ref: "003150", nom: "Contacteur principal" }, { ref: "428144", nom: "Corps de torche XD/XPR" }] },
-            "24M": { days: 730, parts: [{ ref: "428384", nom: "Kit pompe à eau" }, { ref: "428385", nom: "Faisceaux de torche (Leads)" }] },
-            "36M": { days: 1095, parts: [{ ref: "027666", nom: "Ventilateurs" }, { ref: "027667", nom: "Moteur hydraulique" }] }
-        };
-    }
+  const standard = modele === "HPR260" || modele === "MAXPRO200";
+  if (standard) {
+    return {
+      "6M": [{ ref: "027664", nom: "Filtre à air principal" }, { ref: "028872", nom: "Coolant (Liquide ref.)" }, { ref: "027665", nom: "Filtre liquide ref." }, { ref: "128879", nom: "Kit entretien torche Std" }],
+      "12M": [{ ref: "003149", nom: "Relais arc pilote" }, { ref: "003150", nom: "Contacteur principal" }, { ref: "220162", nom: "Corps de torche (Standard)" }],
+      "24M": [{ ref: "023274", nom: "Pompe à eau" }, { ref: "228292", nom: "Faisceaux de torche Std" }],
+      "36M": [{ ref: "027666", nom: "Ventilateurs" }, { ref: "027667", nom: "Moteur pompe" }]
+    };
+  }
+  return {
+    "6M": [{ ref: "027664", nom: "Filtre à air principal" }, { ref: "028872", nom: "Coolant 70/30" }, { ref: "027665", nom: "Filtre liquide ref." }, { ref: "428383", nom: "Kit d'entretien torche XD/XPR" }],
+    "12M": [{ ref: "003149", nom: "Relais arc pilote" }, { ref: "003150", nom: "Contacteur principal" }, { ref: "428144", nom: "Corps de torche XD/XPR" }],
+    "24M": [{ ref: "428384", nom: "Kit pompe à eau" }, { ref: "428385", nom: "Faisceaux de torche (Leads)" }],
+    "36M": [{ ref: "027666", nom: "Ventilateurs" }, { ref: "027667", nom: "Moteur hydraulique" }]
+  };
 }
 
+// Jalons tous les 6 mois d'usage effectif (corrigé : l'ancien calcul ne détectait jamais 12M/24M/36M)
+// n = index du semestre : n%6==0 -> 36M, n%4==0 -> 24M, n%2==0 -> 12M, sinon 6M
 function getNextHyperthermCycle(instDateStr, shifts, modele) {
-    const today = new Date(); today.setHours(0,0,0,0);
-    const instDate = new Date(instDateStr); instDate.setHours(0,0,0,0);
-    const rules = getHTRules(modele);
-    
-    if (instDate > today) {
-        let nextDateObj = new Date(instDate); nextDateObj.setDate(nextDateObj.getDate() + Math.round(182 / shifts));
-        return { cycleType: "6M", dateObj: nextDateObj, parts: rules["6M"].parts };
-    }
+  const s = shifts || 1;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const instDate = parseLocal(instDateStr);
+  const rules = getHTRules(modele);
 
-    let diffTime = today.getTime() - instDate.getTime();
-    let diffDays = Math.ceil(diffTime / (1000 * 3600 * 24));
-    let effectiveAgeDays = diffDays * shifts;
-    
-    let nextMilestone = Math.ceil(effectiveAgeDays / 182) * 182;
-    if (nextMilestone === 0 || (nextMilestone/shifts) <= diffDays) { nextMilestone += 182; }
+  let n = 1;
+  if (instDate <= today) {
+    const ageDays = Math.floor((today - instDate) / 86400000);
+    n = Math.floor((ageDays * s) / HALF_YEAR) + 1;
+  }
+  let cycleType = "6M";
+  if (n % 6 === 0) cycleType = "36M"; else if (n % 4 === 0) cycleType = "24M"; else if (n % 2 === 0) cycleType = "12M";
 
-    let cycleType = "6M";
-    if (nextMilestone % 1095 === 0) cycleType = "36M";
-    else if (nextMilestone % 730 === 0) cycleType = "24M";
-    else if (nextMilestone % 365 === 0) cycleType = "12M";
-
-    const nextDateObj = new Date(instDate); nextDateObj.setDate(nextDateObj.getDate() + Math.round(nextMilestone / shifts));
-    
-    return { cycleType: cycleType, dateObj: nextDateObj, parts: rules[cycleType].parts };
+  const dateObj = new Date(instDate);
+  dateObj.setDate(dateObj.getDate() + Math.round((n * HALF_YEAR) / s));
+  return { cycleType, dateObj, parts: rules[cycleType] };
 }
 
-const qHT = query(collection(db, "hypertherm"));
-onSnapshot(qHT, (snapshot) => {
-    hyperthermDB = []; const container = document.getElementById('hypertherm-container'); if(container) container.innerHTML = '';
-    if (snapshot.empty && container) { container.innerHTML = '<p class="text-slate-500 italic">Aucun générateur Hypertherm enregistré.</p>'; return; }
-    snapshot.forEach(docSnap => { const data = docSnap.data(); data.id = docSnap.id; hyperthermDB.push(data); });
-    hyperthermDB.sort((a, b) => new Date(a.dateInstallation) - new Date(b.dateInstallation));
-
-    const now = new Date();
-    hyperthermDB.forEach(data => {
-        if (container) {
-            const cycleInfo = getNextHyperthermCycle(data.dateInstallation, data.shifts || 1, data.modele);
-            const instDateStr = new Date(data.dateInstallation).toLocaleDateString('fr-FR');
-            const nextDateStr = cycleInfo.dateObj.toLocaleDateString('fr-FR');
-            
-            let partsHTML = '<ul class="mt-3 space-y-2">'; let textToCopy = `Demande PDR - Préventif Hypertherm A2CIM\nClient: ${data.client}\nMachine: ${data.machine} (${data.modele})\nIntervention: ${cycleInfo.cycleType}\n\nPièces à commander :\n`;
-            cycleInfo.parts.forEach(p => { partsHTML += `<li class="flex justify-between items-center text-xs border-b border-amber-200/50 pb-1.5"><span class="text-slate-700 font-medium">${p.nom}</span><span class="font-mono font-bold text-amber-700 bg-amber-100/50 px-2 py-0.5 rounded border border-amber-200">Réf: ${p.ref}</span></li>`; textToCopy += `- [Réf: ${p.ref}] ${p.nom}\n`; }); partsHTML += '</ul>';
-            const safeText = encodeURIComponent(textToCopy);
-
-            container.innerHTML += `<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 relative overflow-hidden"><button onclick="supprimerHypertherm('${data.id}')" class="absolute top-4 right-4 text-slate-300 hover:text-red-500"><i class="fa-solid fa-trash-can"></i></button><div class="flex items-center gap-3 mb-4"><div class="w-12 h-12 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-500 text-2xl shadow-inner"><i class="fa-solid fa-bolt"></i></div><div><h3 class="font-bold text-lg text-slate-800 uppercase">${data.client} <span class="text-slate-400 font-normal mx-1">|</span> ${data.machine}</h3><p class="text-sm text-slate-500 font-medium">${data.modele} &nbsp;&bull;&nbsp; <span class="text-slate-400">Installé le ${instDateStr} (${data.shifts} Poste${data.shifts>1?'s':''})</span></p></div></div><div class="bg-amber-50/50 border border-amber-100 rounded-xl p-4 mt-2"><div class="flex items-center justify-between mb-3"><span class="text-xs font-bold uppercase tracking-wider text-slate-500">Prochaine Échéance : ${cycleInfo.cycleType}</span><span class="text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider bg-amber-100 text-amber-800"><i class="fa-solid fa-calendar-day mr-1"></i> ${nextDateStr}</span></div><div class="flex justify-between items-center mb-1"><p class="text-amber-900 font-bold text-xs uppercase tracking-wider"><i class="fa-solid fa-boxes-stacked mr-1 text-amber-500"></i> Liste d'achat</p><button onclick="navigator.clipboard.writeText(decodeURIComponent('${safeText}')).then(()=>alert('✅ Liste copiée !'))" class="text-[10px] bg-amber-200 hover:bg-amber-300 text-amber-900 px-2 py-1.5 rounded-lg font-bold transition-colors shadow-sm"><i class="fa-solid fa-copy mr-1"></i> Copier</button></div>${partsHTML}</div></div>`;
-        }
-    });
-});
-
-if (document.getElementById('formAddHypertherm')) {
-    document.getElementById('formAddHypertherm').addEventListener('submit', async (e) => {
-        e.preventDefault(); const btnSubmit = e.target.querySelector('button[type="submit"]'); const origTxt = btnSubmit.innerHTML; btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; btnSubmit.disabled = true;
-        try {
-            const client = document.getElementById('htClient').value; const machine = document.getElementById('htMachine').value;
-            const modele = document.getElementById('htModel').value; const dateInst = document.getElementById('htDateInst').value; const shifts = parseInt(document.getElementById('htShifts').value);
-            if (!client || !machine) { alert("Sélectionnez un client et une machine."); return; }
-            
-            await addDoc(collection(db, "hypertherm"), { client: client, machine: machine, modele: modele, dateInstallation: dateInst, shifts: shifts, timestamp: serverTimestamp() });
-            
-            const cycleInfo = getNextHyperthermCycle(dateInst, shifts, modele);
-            await addDoc(collection(db, "interventions"), { client: client, machine: machine, date: cycleInfo.dateObj.toISOString().split('T')[0], type: "Préventif", technicien: "Équipe A2CIM", statut: "Planifié", frequence: "Hypertherm", timestamp: serverTimestamp() });
-            
-            let newKit = cycleInfo.parts.map(p => ({ ref: p.ref, nom: p.nom, qte: 1 }));
-            const existingKit = kitsDB[client + "_" + machine];
-            if (existingKit) { await updateDoc(doc(db, "kits", existingKit.id), { pieces: newKit }); } else { await addDoc(collection(db, "kits"), { client: client, machine: machine, pieces: newKit }); }
-            
-            e.target.reset(); document.getElementById('htMachine').innerHTML = '<option value="" disabled selected>Machine...</option>';
-            alert(`✅ ${modele} surveillé pour ${client}.\n\n📅 IMPORTANT :\nLe système a calculé la prochaine vraie révision au : ${cycleInfo.dateObj.toLocaleDateString('fr-FR')}.`);
-        } catch(error) { console.error(error); alert("Erreur : " + error.message); } finally { btnSubmit.innerHTML = origTxt; btnSubmit.disabled = false; }
-    });
+function purchaseText(data, cycleInfo) {
+  return `Demande PDR - Préventif Hypertherm A2CIM\nClient: ${data.client}\nMachine: ${data.machine} (${data.modele})\nIntervention: ${cycleInfo.cycleType}\n\nPièces à commander :\n` +
+    cycleInfo.parts.map((p) => `- [Réf: ${p.ref}] ${p.nom}`).join("\n") + "\n";
 }
-window.supprimerHypertherm = async function(id) { if (confirm("Arrêter la surveillance ?")) await deleteDoc(doc(db, "hypertherm", id)); };
 
+onSnapshot(query(collection(db, "hypertherm")), (snapshot) => {
+  hyperthermDB = [];
+  snapshot.forEach((d) => hyperthermDB.push({ ...d.data(), id: d.id }));
+  hyperthermDB.sort((a, b) => String(a.dateInstallation).localeCompare(String(b.dateInstallation)));
+  renderHypertherm();
+}, onListenError("hypertherm"));
 
-// ==========================================
-// CONFIG STATUTS & CALENDRIER INTELLIGENT
-// ==========================================
-// AJOUT DU STATUT ARCHIVÉ (Invisible sur le Dashboard)
-const statusConfig = { 
-    "En retard": { bg: "#fef2f2", border: "#ef4444", text: "#b91c1c", color: "#ef4444" }, 
-    "En cours": { bg: "#fff7ed", border: "#f97316", text: "#c2410c", color: "#f97316" }, 
-    "Planifié": { bg: "#eff6ff", border: "#3b82f6", text: "#1d4ed8", color: "#3b82f6" }, 
-    "Terminé": { bg: "#f0fdf4", border: "#22c55e", text: "#15803d", color: "#22c55e" },
-    "Archivé": { bg: "#f3f4f6", border: "#d1d5db", text: "#374151", color: "#9ca3af" }
+function renderHypertherm() {
+  const container = $("hypertherm-container"); if (!container) return;
+  if (hyperthermDB.length === 0) { container.innerHTML = '<p class="text-slate-500 italic">Aucun générateur Hypertherm enregistré.</p>'; return; }
+  container.innerHTML = hyperthermDB.map((data) => {
+    const shifts = data.shifts || 1;
+    const cycleInfo = getNextHyperthermCycle(data.dateInstallation, shifts, data.modele);
+    const instStr = parseLocal(data.dateInstallation).toLocaleDateString("fr-FR");
+    const nextStr = cycleInfo.dateObj.toLocaleDateString("fr-FR");
+    const partsHTML = '<ul class="mt-3 space-y-2">' + cycleInfo.parts.map((p) =>
+      `<li class="flex justify-between items-center text-xs border-b border-amber-200/50 pb-1.5"><span class="text-slate-700 font-medium">${esc(p.nom)}</span><span class="font-mono font-bold text-amber-700 bg-amber-100/50 px-2 py-0.5 rounded border border-amber-200">Réf: ${esc(p.ref)}</span></li>`).join("") + "</ul>";
+    const delBtn = isAdmin ? `<button data-act="del-ht" data-id="${esc(data.id)}" class="absolute top-4 right-4 text-slate-300 hover:text-red-500"><i class="fa-solid fa-trash-can"></i></button>` : "";
+    return `<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 relative overflow-hidden">${delBtn}<div class="flex items-center gap-3 mb-4"><div class="w-12 h-12 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-500 text-2xl shadow-inner"><i class="fa-solid fa-bolt"></i></div><div><h3 class="font-bold text-lg text-slate-800 uppercase">${esc(data.client)} <span class="text-slate-400 font-normal mx-1">|</span> ${esc(data.machine)}</h3><p class="text-sm text-slate-500 font-medium">${esc(data.modele)} &nbsp;&bull;&nbsp; <span class="text-slate-400">Installé le ${instStr} (${esc(shifts)} Poste${shifts > 1 ? "s" : ""})</span></p></div></div><div class="bg-amber-50/50 border border-amber-100 rounded-xl p-4 mt-2"><div class="flex items-center justify-between mb-3"><span class="text-xs font-bold uppercase tracking-wider text-slate-500">Prochaine Échéance : ${esc(cycleInfo.cycleType)}</span><span class="text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider bg-amber-100 text-amber-800"><i class="fa-solid fa-calendar-day mr-1"></i> ${nextStr}</span></div><div class="flex justify-between items-center mb-1"><p class="text-amber-900 font-bold text-xs uppercase tracking-wider"><i class="fa-solid fa-boxes-stacked mr-1 text-amber-500"></i> Liste d'achat</p><button data-act="copy-ht" data-id="${esc(data.id)}" class="text-[10px] bg-amber-200 hover:bg-amber-300 text-amber-900 px-2 py-1.5 rounded-lg font-bold transition-colors shadow-sm"><i class="fa-solid fa-copy mr-1"></i> Copier</button></div>${partsHTML}</div></div>`;
+  }).join("");
+}
+
+if ($("formAddHypertherm")) {
+  $("formAddHypertherm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]'); const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; btn.disabled = true;
+    try {
+      const client = $("htClient").value, machine = $("htMachine").value, modele = $("htModel").value;
+      const dateInst = $("htDateInst").value, shifts = parseInt($("htShifts").value, 10) || 1;
+      if (!client || !machine) return toast("Sélectionnez un client et une machine.", "error");
+
+      await setDoc(doc(db, "hypertherm", recurrenceId("HT", client, machine)), { client, machine, modele, dateInstallation: dateInst, shifts, timestamp: serverTimestamp() });
+      const cycleInfo = getNextHyperthermCycle(dateInst, shifts, modele);
+      await createIntervention({ client, machine, date: localDateStr(cycleInfo.dateObj), type: "Préventif", technicien: "Équipe A2CIM", statut: "Planifié", frequence: "Hypertherm" });
+      await upsertKit(client, machine, cycleInfo.parts.map((p) => ({ ref: p.ref, nom: p.nom, qte: 1 })));
+
+      e.target.reset(); $("htMachine").innerHTML = '<option value="" disabled selected>Machine...</option>';
+      alert(`✅ ${modele} surveillé pour ${client}.\n\n📅 Prochaine révision calculée : ${cycleInfo.dateObj.toLocaleDateString("fr-FR")} (${cycleInfo.cycleType}).`);
+    } catch (err) { console.error(err); toast("Erreur : " + (err.code || err.message), "error"); }
+    finally { btn.innerHTML = orig; btn.disabled = false; }
+  });
+}
+const supprimerHypertherm = (id) => confirm("Arrêter la surveillance ?") && safe(() => deleteDoc(doc(db, "hypertherm", id)));
+
+// ---------------------------------------------------------------------
+// STATUTS & CALENDRIER
+// ---------------------------------------------------------------------
+const statusConfig = {
+  "En retard": { bg: "#fef2f2", border: "#ef4444", text: "#b91c1c", color: "#ef4444" },
+  "En cours": { bg: "#fff7ed", border: "#f97316", text: "#c2410c", color: "#f97316" },
+  "Planifié": { bg: "#eff6ff", border: "#3b82f6", text: "#1d4ed8", color: "#3b82f6" },
+  "Terminé": { bg: "#f0fdf4", border: "#22c55e", text: "#15803d", color: "#22c55e" },
+  "Archivé": { bg: "#f3f4f6", border: "#d1d5db", text: "#374151", color: "#9ca3af" }
 };
 
 function initCalendar() {
-    const calendarEl = document.getElementById('calendar'); if (!calendarEl) return; if (fullCalendarInstance) fullCalendarInstance.destroy();
-    fullCalendarInstance = new FullCalendar.Calendar(calendarEl, {
-        initialView: window.innerWidth < 768 ? 'listMonth' : 'dayGridMonth', locale: 'fr', weekNumbers: true, weekText: 'S', dayMaxEvents: 2, moreLinkClick: 'listDay',    
-        headerToolbar: { left: 'prev,next today', center: 'title', right: window.innerWidth < 768 ? '' : 'dayGridMonth,listDay' },
-        buttonText: { today: "Aujourd'hui", month: 'Mois', list: 'Jour' }, height: '100%', events: [],
-        eventClick: function(info) { ouvrirActionModal(info.event); }, dateClick: function(info) { fullCalendarInstance.changeView('listDay', info.dateStr); }
-    });
-    fullCalendarInstance.render();
+  const el = $("calendar");
+  if (!el || typeof FullCalendar === "undefined") return;
+  if (fullCalendarInstance) fullCalendarInstance.destroy();
+  const mobile = window.innerWidth < 768;
+  fullCalendarInstance = new FullCalendar.Calendar(el, {
+    initialView: mobile ? "listMonth" : "dayGridMonth", locale: "fr", weekNumbers: true, weekText: "S",
+    dayMaxEvents: 2, moreLinkClick: "listDay",
+    headerToolbar: { left: "prev,next today", center: "title", right: mobile ? "" : "dayGridMonth,listDay" },
+    buttonText: { today: "Aujourd'hui", month: "Mois", list: "Jour" }, height: "100%", events: [],
+    eventClick: (info) => ouvrirActionModal(info.event),
+    dateClick: (info) => fullCalendarInstance.changeView("listDay", info.dateStr)
+  });
+  fullCalendarInstance.render();
 }
+
 function updateCalendarEvents() {
-    if (!fullCalendarInstance) return; fullCalendarInstance.removeAllEvents();
-    const todayStr = new Date().toISOString().split('T')[0]; const preventifDates = new Set();
-    allInterventions.forEach(data => {
-        if (data.statut === "Archivé") return; // On ne montre pas les archives dans le calendrier
-        if (currentClientFilter !== "ALL" && data.client !== currentClientFilter) return; if (currentTypeFilter !== "ALL" && data.type !== currentTypeFilter) return;
-        let eventColor = statusConfig[data.statut]?.color || "#3b82f6";
-        if (data.statut !== "Terminé" && data.date < todayStr) eventColor = "#ef4444"; else if (data.statut === "Planifié" && data.type === "Curatif") eventColor = "#ef4444"; 
-        if (data.type === "Préventif") preventifDates.add(data.date);
-        let eventTitle = data.type === "Curatif" ? `🚨 ${data.client} - ${data.machine}` : `🔧 ${data.client} - ${data.machine}`;
-        fullCalendarInstance.addEvent({ id: data.id, title: eventTitle, start: data.date, backgroundColor: eventColor, borderColor: eventColor, extendedProps: { client: data.client, statut: data.statut, frequence: data.frequence || 'Ponctuel', type: data.type, machine: data.machine, technicien: data.technicien } });
+  if (!fullCalendarInstance) return;
+  fullCalendarInstance.removeAllEvents();
+  const todayStr = localDateStr();
+  const preventifDates = new Set();
+  allInterventions.forEach((data) => {
+    if (currentClientFilter !== "ALL" && data.client !== currentClientFilter) return;
+    if (currentTypeFilter !== "ALL" && data.type !== currentTypeFilter) return;
+    let color = statusConfig[data.statut]?.color || "#3b82f6";
+    if (data.statut !== "Terminé" && data.date < todayStr) color = "#ef4444";
+    else if (data.statut === "Planifié" && data.type === "Curatif") color = "#ef4444";
+    if (data.type === "Préventif") preventifDates.add(data.date);
+    fullCalendarInstance.addEvent({
+      id: data.id, title: `${data.type === "Curatif" ? "🚨" : "🔧"} ${data.client} - ${data.machine}`, start: data.date,
+      backgroundColor: color, borderColor: color,
+      extendedProps: { client: data.client, statut: data.statut, frequence: data.frequence || "Ponctuel", type: data.type, machine: data.machine, technicien: data.technicien }
     });
-    preventifDates.forEach(dateStr => { fullCalendarInstance.addEvent({ start: dateStr, display: 'background', backgroundColor: '#f1f5f9' }); });
+  });
+  preventifDates.forEach((d) => fullCalendarInstance.addEvent({ start: d, display: "background", backgroundColor: "#f1f5f9" }));
 }
-const clientFilterSelect = document.getElementById('calendarClientFilter'); if (clientFilterSelect) clientFilterSelect.addEventListener('change', (e) => { currentClientFilter = e.target.value; updateCalendarEvents(); });
-const typeFilterSelect = document.getElementById('calendarTypeFilter'); if (typeFilterSelect) typeFilterSelect.addEventListener('change', (e) => { currentTypeFilter = e.target.value; updateCalendarEvents(); });
-document.addEventListener('DOMContentLoaded', initCalendar);
 
-// ==========================================
+if ($("calendarClientFilter")) $("calendarClientFilter").addEventListener("change", (e) => { currentClientFilter = e.target.value; updateCalendarEvents(); });
+if ($("calendarTypeFilter")) $("calendarTypeFilter").addEventListener("change", (e) => { currentTypeFilter = e.target.value; updateCalendarEvents(); });
+initCalendar();
+
+// ---------------------------------------------------------------------
 // MODAL D'ACTION (MACHINE INDIVIDUELLE)
-// ==========================================
-const actionModal = document.getElementById('eventActionModal');
+// ---------------------------------------------------------------------
+const actionModal = $("eventActionModal");
 
-window.ouvrirActionModal = function(eventOrId) {
-    let id, props, title, dateVal;
-    if (typeof eventOrId === 'string') {
-        const intData = allInterventions.find(i => i.id === eventOrId); if(!intData) return;
-        id = intData.id; props = { client: intData.client, machine: intData.machine, statut: intData.statut, frequence: intData.frequence || 'Ponctuel', type: intData.type }; title = intData.machine;
-    } else { if(eventOrId.display === 'background') return; id = eventOrId.id; props = eventOrId.extendedProps; title = props.machine; }
+function ouvrirActionModal(eventOrId) {
+  let id, props;
+  if (typeof eventOrId === "string") {
+    const i = allInterventions.find((x) => x.id === eventOrId); if (!i) return;
+    id = i.id; props = { client: i.client, machine: i.machine, statut: i.statut, frequence: i.frequence || "Ponctuel", type: i.type };
+  } else {
+    if (eventOrId.display === "background") return;
+    id = eventOrId.id; props = eventOrId.extendedProps;
+  }
+  const exact = allInterventions.find((x) => x.id === id);
+  $("actionModalTitle").textContent = props.machine;
+  $("actionModalSub").textContent = `${props.client} | ${props.frequence}`;
+  $("actionEventId").value = id; $("actionEventDate").value = exact ? exact.date : "";
+  $("actionEventClient").value = props.client; $("actionEventType").value = props.type;
 
-    const exactData = allInterventions.find(i => i.id === id); if(exactData) dateVal = exactData.date;
-    document.getElementById('actionModalTitle').textContent = title; document.getElementById('actionModalSub').textContent = `${props.client} | ${props.frequence}`;
-    document.getElementById('actionEventId').value = id; document.getElementById('actionEventDate').value = dateVal || ""; document.getElementById('actionEventClient').value = props.client; document.getElementById('actionEventType').value = props.type;
-    
-    document.getElementById('btnSetEnCours').style.display = (props.statut === "Planifié") ? "block" : "none"; 
-    document.getElementById('btnSetTermine').style.display = (props.statut !== "Terminé") ? "block" : "none";
-    document.getElementById('deleteOptionsDiv').style.display = "block";
-    
-    const encartPDR = document.getElementById('actionModalPDR'); const ulPDR = document.getElementById('actionModalPDRList'); ulPDR.innerHTML = '';
-    const theKit = kitsDB[props.client + "_" + props.machine];
-    if (props.type === "Préventif" && theKit && theKit.pieces.length > 0) {
-        theKit.pieces.forEach(p => { ulPDR.innerHTML += `<li><span class="font-black bg-white text-brand-700 px-2 py-0.5 rounded mr-2 border border-brand-100">${p.qte}x</span> [${p.ref}] ${p.nom}</li>`; });
-        encartPDR.classList.remove('hidden');
-    } else { encartPDR.classList.add('hidden'); }
-    actionModal.classList.remove('hidden'); actionModal.classList.add('flex');
+  $("btnSetEnCours").style.display = props.statut === "Planifié" ? "block" : "none";
+  $("btnSetTermine").style.display = props.statut !== "Terminé" ? "block" : "none";
+  $("deleteOptionsDiv").style.display = isAdmin ? "block" : "none";
+
+  const kit = kitsDB[kitKey(props.client, props.machine)];
+  const ul = $("actionModalPDRList");
+  if (props.type === "Préventif" && kit && kit.pieces.length > 0) {
+    ul.innerHTML = kit.pieces.map((p) => `<li><span class="font-black bg-white text-brand-700 px-2 py-0.5 rounded mr-2 border border-brand-100">${esc(p.qte)}x</span> [${esc(p.ref)}] ${esc(p.nom)}</li>`).join("");
+    $("actionModalPDR").classList.remove("hidden");
+  } else { ul.innerHTML = ""; $("actionModalPDR").classList.add("hidden"); }
+  actionModal.classList.remove("hidden"); actionModal.classList.add("flex");
 }
-function fermerActionModal() { actionModal.classList.add('hidden'); actionModal.classList.remove('flex'); }
-document.getElementById('btnCloseActionModal').addEventListener('click', fermerActionModal);
-document.getElementById('btnDeleteEvent').addEventListener('click', async () => { if (confirm("Supprimer l'intervention pour cette machine uniquement ?")) { await deleteDoc(doc(db, "interventions", document.getElementById('actionEventId').value)); fermerActionModal(); } });
-document.getElementById('btnSetEnCours').addEventListener('click', async () => { await updateDoc(doc(db, "interventions", document.getElementById('actionEventId').value), { statut: "En cours" }); fermerActionModal(); });
+function fermerActionModal() { actionModal.classList.add("hidden"); actionModal.classList.remove("flex"); }
 
-// ETAPE 1 : Le technicien sur le terrain clique sur "Valider la machine"
-document.getElementById('btnSetTermine').addEventListener('click', async () => {
-    const btnTermine = document.getElementById('btnSetTermine'); const orig = btnTermine.innerHTML; btnTermine.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Validation...'; btnTermine.disabled = true;
-    const id = document.getElementById('actionEventId').value; const intv = allInterventions.find(i => i.id === id);
-    if (!intv) { fermerActionModal(); return; }
-
-    try {
-        // Changement de statut UNIQUEMENT (Pas de génération de fiche ici)
-        await updateDoc(doc(db, "interventions", id), { statut: "Terminé" });
-
-        // Création de la récurrence automatique
-        const freq = intv.frequence || "Ponctuel";
-        if (freq === "Hypertherm") {
-            const htMachine = hyperthermDB.find(h => h.client === intv.client && h.machine === intv.machine);
-            if(htMachine) {
-                const cycleInfo = getNextHyperthermCycle(htMachine.dateInstallation, htMachine.shifts || 1, htMachine.modele);
-                await addDoc(collection(db, "interventions"), { client: intv.client, machine: intv.machine, date: cycleInfo.dateObj.toISOString().split('T')[0], type: "Préventif", technicien: "Équipe A2CIM", statut: "Planifié", frequence: "Hypertherm", timestamp: serverTimestamp() });
-                let newKit = cycleInfo.parts.map(p => ({ ref: p.ref, nom: p.nom, qte: 1 }));
-                const theKit = kitsDB[intv.client + "_" + intv.machine];
-                if (theKit) { await updateDoc(doc(db, "kits", theKit.id), { pieces: newKit }); } else { await addDoc(collection(db, "kits"), { client: htMachine.client, machine: htMachine.machine, pieces: newKit }); }
-            }
-        } else if (freq !== "Ponctuel") {
-            const dateObj = new Date(intv.date);
-            if (freq === "Mensuel") dateObj.setMonth(dateObj.getMonth() + 1); else if (freq === "Trimestriel") dateObj.setMonth(dateObj.getMonth() + 3); else if (freq === "Semestriel") dateObj.setMonth(dateObj.getMonth() + 6); else if (freq === "Annuel") dateObj.setFullYear(dateObj.getFullYear() + 1);
-            await addDoc(collection(db, "interventions"), { client: intv.client, machine: intv.machine, date: dateObj.toISOString().split('T')[0], type: intv.type, technicien: intv.technicien, statut: "Planifié", frequence: freq, timestamp: serverTimestamp() });
-        }
-    } catch (e) { console.error(e); alert("Erreur."); } finally { btnTermine.innerHTML = orig; btnTermine.disabled = false; fermerActionModal(); }
+$("btnCloseActionModal").addEventListener("click", fermerActionModal);
+$("btnDeleteEvent").addEventListener("click", async () => {
+  if (!confirm("Supprimer l'intervention pour cette machine uniquement ?")) return;
+  await safe(() => deleteDoc(doc(db, "interventions", $("actionEventId").value)));
+  fermerActionModal();
+});
+$("btnSetEnCours").addEventListener("click", async () => {
+  await safe(() => updateDoc(doc(db, "interventions", $("actionEventId").value), { statut: "En cours" }));
+  fermerActionModal();
 });
 
-// ==========================================
-// SYNCHRO TABLEAU DE BORD (GROUPÉ & 3 COLONNES)
-// ==========================================
-const q = query(collection(db, "interventions"), orderBy("date", "asc"));
-onSnapshot(q, (snapshot) => {
-    const urgentContainer = document.getElementById('urgent-tasks-container'); const upcomingContainer = document.getElementById('upcoming-tasks-container'); const completedContainer = document.getElementById('completed-tasks-container');
-    if (urgentContainer) urgentContainer.innerHTML = ''; if (upcomingContainer) upcomingContainer.innerHTML = ''; if (completedContainer) completedContainer.innerHTML = '';
-    
-    allInterventions = []; groupedInterventionsGlobal = {}; 
-    let activeTotalCount = 0; let retardCount = 0; let enCoursCount = 0; let termineCount = 0; const todayStr = new Date().toISOString().split('T')[0];
+async function planNextOccurrence(intv) {
+  const freq = intv.frequence || "Ponctuel";
+  if (freq === "Hypertherm") {
+    const ht = hyperthermDB.find((h) => h.client === intv.client && h.machine === intv.machine);
+    if (!ht) return;
+    const cycleInfo = getNextHyperthermCycle(ht.dateInstallation, ht.shifts || 1, ht.modele);
+    await createIntervention({ client: intv.client, machine: intv.machine, date: localDateStr(cycleInfo.dateObj), type: "Préventif", technicien: "Équipe A2CIM", statut: "Planifié", frequence: "Hypertherm" });
+    await upsertKit(intv.client, intv.machine, cycleInfo.parts.map((p) => ({ ref: p.ref, nom: p.nom, qte: 1 })));
+  } else if (freq !== "Ponctuel") {
+    const months = { Mensuel: 1, Trimestriel: 3, Semestriel: 6, Annuel: 12 }[freq];
+    if (!months) return;
+    await createIntervention({ client: intv.client, machine: intv.machine, date: localDateStr(addMonths(parseLocal(intv.date), months)), type: intv.type, technicien: intv.technicien, statut: "Planifié", frequence: freq });
+  }
+}
 
-    snapshot.forEach((docSnap) => {
-        const data = docSnap.data(); data.id = docSnap.id; 
-        if (data.statut === "Archivé") return; // L'archive disparaît des radars !
-        allInterventions.push(data);
-        
-        if (data.statut === "Terminé") termineCount++;
-        else {
-            activeTotalCount++; const isRetard = data.date < todayStr;
-            if (data.statut === "En retard" || isRetard) retardCount++; if (data.statut === "En cours") enCoursCount++;
-        }
-
-        const isRetard = data.date < todayStr;
-        const dateAffichee = data.date ? new Date(data.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
-        let currentConfig = statusConfig[data.statut] || statusConfig["Planifié"];
-        if (isRetard && data.statut === "Planifié") currentConfig = statusConfig["En retard"];
-        
-        const groupKey = `${data.client}_${data.date}_${data.type}_${isRetard && data.statut !== "Terminé" ? 'Retard' : data.statut}`;
-        if (!groupedInterventionsGlobal[groupKey]) { groupedInterventionsGlobal[groupKey] = { client: data.client, dateAffichee: dateAffichee, type: data.type, statut: (isRetard && data.statut === "Planifié") ? "En retard" : data.statut, isRetard: isRetard, config: currentConfig, machines: [] }; }
-        groupedInterventionsGlobal[groupKey].machines.push(data);
-    });
-
-    Object.keys(groupedInterventionsGlobal).forEach(key => {
-        const group = groupedInterventionsGlobal[key];
-        const cardHTML = `<div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex items-center justify-between hover:shadow-md transition-shadow cursor-pointer" onclick="ouvrirModalGroupe('${key}')"><div class="w-2 self-stretch border-l-4" style="background-color: ${group.config.bg}; border-color: ${group.config.border};"></div><div class="p-4 flex-1 flex items-center justify-between"><div><div class="flex items-center gap-2 mb-1"><h3 class="font-bold text-slate-800 text-base uppercase">${group.client}</h3>${group.isRetard && group.statut !== 'Terminé' ? '<span class="text-red-500 font-bold text-xs"><i class="fa-solid fa-triangle-exclamation"></i></span>' : ''}</div><p class="text-sm text-slate-600 font-medium"><i class="fa-solid fa-microchip mr-1 text-slate-400"></i> ${group.machines.length} machine(s) ${group.statut==='Terminé' ? 'achevée(s)' : 'prévue(s)'}</p><p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-calendar-day mr-1"></i> ${group.dateAffichee} &nbsp;|&nbsp; <i class="fa-solid fa-wrench mr-1"></i> ${group.type}</p></div><div class="px-3 py-1.5 rounded-lg text-xs font-bold uppercase" style="background-color: ${group.config.bg}; color: ${group.config.text}; border-color: ${group.config.border}; border-width: 1px;">${group.statut}</div></div></div>`;
-        
-        if (group.statut === "Terminé") {
-            if (completedContainer) completedContainer.innerHTML += cardHTML;
-        } else if (group.type === "Curatif" || group.isRetard || group.statut === "En retard") { 
-            if (urgentContainer) urgentContainer.innerHTML += cardHTML; 
-        } else { 
-            if (upcomingContainer) upcomingContainer.innerHTML += cardHTML; 
-        }
-    });
-
-    if (urgentContainer && urgentContainer.innerHTML === '') urgentContainer.innerHTML = '<p class="text-slate-400 text-sm italic py-2">Super ! Aucune urgence ni retard.</p>';
-    if (upcomingContainer && upcomingContainer.innerHTML === '') upcomingContainer.innerHTML = '<p class="text-slate-400 text-sm italic py-2">Aucune maintenance préventive prévue.</p>';
-    if (completedContainer && completedContainer.innerHTML === '') completedContainer.innerHTML = '<p class="text-slate-400 text-sm italic py-2">Aucune intervention terminée en attente de fiche.</p>';
-    
-    if (document.getElementById('kpi-total')) document.getElementById('kpi-total').textContent = activeTotalCount;
-    if (document.getElementById('kpi-retard')) document.getElementById('kpi-retard').textContent = retardCount;
-    if (document.getElementById('kpi-encours')) document.getElementById('kpi-encours').textContent = enCoursCount;
-    if (document.getElementById('kpi-termine')) document.getElementById('kpi-termine').textContent = termineCount;
-    
-    updateCalendarEvents();
+$("btnSetTermine").addEventListener("click", async () => {
+  const btn = $("btnSetTermine"); const orig = btn.innerHTML;
+  const intv = allInterventions.find((i) => i.id === $("actionEventId").value);
+  if (!intv || intv.statut === "Terminé") { fermerActionModal(); return; }
+  btn.innerHTML = SPINNER + "Validation..."; btn.disabled = true;
+  try {
+    await updateDoc(doc(db, "interventions", intv.id), { statut: "Terminé" });
+    await planNextOccurrence(intv);
+  } catch (err) { console.error(err); toast("Erreur lors de la validation : " + (err.code || err.message), "error"); }
+  finally { btn.innerHTML = orig; btn.disabled = false; fermerActionModal(); }
 });
 
-window.ouvrirModalGroupe = function(groupKey) {
-    const group = groupedInterventionsGlobal[groupKey]; if (!group) return;
-    document.getElementById('groupModalTitle').textContent = `Machines - ${group.client}`; document.getElementById('groupModalSub').textContent = `${group.dateAffichee} | ${group.type}`;
-    const listContainer = document.getElementById('groupModalList'); listContainer.innerHTML = '';
-    
-    let htmlContent = '<div class="space-y-2 mb-4">';
-    group.machines.forEach(m => { 
-        // Si c'est déjà terminé, on ne l'ouvre pas pour éviter les bêtises, on affiche juste la liste
-        if (m.statut === "Terminé") {
-            htmlContent += `<div class="flex justify-between items-center p-3 border border-slate-100 rounded-lg bg-green-50"><div><p class="font-bold text-slate-800">${m.machine}</p><p class="text-xs text-green-600 mt-1 font-bold"><i class="fa-solid fa-check mr-1"></i> Achevé par ${m.technicien}</p></div></div>`;
-        } else {
-            htmlContent += `<div class="flex justify-between items-center p-3 border border-slate-100 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors" onclick="fermerModalGroupe(); ouvrirActionModal('${m.id}')"><div><p class="font-bold text-slate-800">${m.machine}</p><p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-user-gear mr-1"></i> ${m.technicien}</p></div><i class="fa-solid fa-chevron-right text-slate-300"></i></div>`; 
-        }
-    });
-    htmlContent += '</div>';
+// ---------------------------------------------------------------------
+// TABLEAU DE BORD (GROUPÉ, 3 COLONNES)
+// ---------------------------------------------------------------------
+onSnapshot(query(collection(db, "interventions"), orderBy("date", "asc")), (snapshot) => {
+  const urgent = $("urgent-tasks-container"), upcoming = $("upcoming-tasks-container"), completed = $("completed-tasks-container");
+  let urgentHTML = "", upcomingHTML = "", completedHTML = "";
+  allInterventions = []; knownIds = new Set(); groupedInterventionsGlobal = {};
+  let active = 0, retard = 0, enCours = 0, termine = 0;
+  const todayStr = localDateStr();
 
-    // ETAPE 2 : Le Chef édite la Fiche depuis la colonne des Terminées
-    if (group.statut === "Terminé") {
-        htmlContent += `<div class="mt-auto pt-4 border-t border-slate-200"><button id="btnRedigerFicheGroupe" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md transition-transform transform hover:-translate-y-1" onclick="redigerFicheGlobaleTerminee('${groupKey}')"><i class="fa-solid fa-file-signature mr-2"></i> Rédiger la Fiche Globale (${group.machines.length} mach.)</button></div>`;
+  snapshot.forEach((docSnap) => {
+    const data = docSnap.data(); data.id = docSnap.id;
+    knownIds.add(docSnap.id);
+    if (data.statut === "Archivé") return;
+    allInterventions.push(data);
+
+    const isRetard = data.date < todayStr;
+    if (data.statut === "Terminé") termine++;
+    else {
+      active++;
+      if (data.statut === "En retard" || isRetard) retard++;
+      if (data.statut === "En cours") enCours++;
     }
+    const dateAffichee = data.date ? parseLocal(data.date).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" }) : "";
+    let config = statusConfig[data.statut] || statusConfig["Planifié"];
+    if (isRetard && data.statut === "Planifié") config = statusConfig["En retard"];
+    const lateNow = isRetard && data.statut !== "Terminé";
+    const groupKey = `${data.client}_${data.date}_${data.type}_${lateNow ? "Retard" : data.statut}`;
+    if (!groupedInterventionsGlobal[groupKey]) {
+      groupedInterventionsGlobal[groupKey] = { client: data.client, dateAffichee, type: data.type, statut: isRetard && data.statut === "Planifié" ? "En retard" : data.statut, isRetard, config, machines: [] };
+    }
+    groupedInterventionsGlobal[groupKey].machines.push(data);
+  });
 
-    listContainer.innerHTML = htmlContent;
-    document.getElementById('groupModal').classList.remove('hidden'); document.getElementById('groupModal').classList.add('flex');
+  Object.keys(groupedInterventionsGlobal).forEach((key) => {
+    const g = groupedInterventionsGlobal[key];
+    const warn = g.isRetard && g.statut !== "Terminé" ? '<span class="text-red-500 font-bold text-xs"><i class="fa-solid fa-triangle-exclamation"></i></span>' : "";
+    const card = `<div data-act="group" data-key="${esc(key)}" class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex items-center justify-between hover:shadow-md transition-shadow cursor-pointer"><div class="w-2 self-stretch border-l-4" style="background-color:${g.config.bg};border-color:${g.config.border};"></div><div class="p-4 flex-1 flex items-center justify-between"><div><div class="flex items-center gap-2 mb-1"><h3 class="font-bold text-slate-800 text-base uppercase">${esc(g.client)}</h3>${warn}</div><p class="text-sm text-slate-600 font-medium"><i class="fa-solid fa-microchip mr-1 text-slate-400"></i> ${g.machines.length} machine(s) ${g.statut === "Terminé" ? "achevée(s)" : "prévue(s)"}</p><p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-calendar-day mr-1"></i> ${esc(g.dateAffichee)} &nbsp;|&nbsp; <i class="fa-solid fa-wrench mr-1"></i> ${esc(g.type)}</p></div><div class="px-3 py-1.5 rounded-lg text-xs font-bold uppercase" style="background-color:${g.config.bg};color:${g.config.text};border-color:${g.config.border};border-width:1px;">${esc(g.statut)}</div></div></div>`;
+    if (g.statut === "Terminé") completedHTML += card;
+    else if (g.type === "Curatif" || g.isRetard || g.statut === "En retard") urgentHTML += card;
+    else upcomingHTML += card;
+  });
+
+  if (urgent) urgent.innerHTML = urgentHTML || '<p class="text-slate-400 text-sm italic py-2">Super ! Aucune urgence ni retard.</p>';
+  if (upcoming) upcoming.innerHTML = upcomingHTML || '<p class="text-slate-400 text-sm italic py-2">Aucune maintenance préventive prévue.</p>';
+  if (completed) completed.innerHTML = completedHTML || '<p class="text-slate-400 text-sm italic py-2">Aucune intervention terminée en attente de fiche.</p>';
+  if ($("kpi-total")) $("kpi-total").textContent = active;
+  if ($("kpi-retard")) $("kpi-retard").textContent = retard;
+  if ($("kpi-encours")) $("kpi-encours").textContent = enCours;
+  if ($("kpi-termine")) $("kpi-termine").textContent = termine;
+  updateCalendarEvents();
+}, onListenError("interventions"));
+
+function ouvrirModalGroupe(groupKey) {
+  const g = groupedInterventionsGlobal[groupKey]; if (!g) return;
+  $("groupModalTitle").textContent = `Machines - ${g.client}`;
+  $("groupModalSub").textContent = `${g.dateAffichee} | ${g.type}`;
+  let html = '<div class="space-y-2 mb-4">' + g.machines.map((m) => m.statut === "Terminé"
+    ? `<div class="flex justify-between items-center p-3 border border-slate-100 rounded-lg bg-green-50"><div><p class="font-bold text-slate-800">${esc(m.machine)}</p><p class="text-xs text-green-600 mt-1 font-bold"><i class="fa-solid fa-check mr-1"></i> Achevé par ${esc(m.technicien)}</p></div></div>`
+    : `<div data-act="open-intv" data-id="${esc(m.id)}" class="flex justify-between items-center p-3 border border-slate-100 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors"><div><p class="font-bold text-slate-800">${esc(m.machine)}</p><p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-user-gear mr-1"></i> ${esc(m.technicien)}</p></div><i class="fa-solid fa-chevron-right text-slate-300"></i></div>`
+  ).join("") + "</div>";
+  if (g.statut === "Terminé") {
+    html += `<div class="mt-auto pt-4 border-t border-slate-200"><button id="btnRedigerFicheGroupe" data-act="fiche-globale" data-key="${esc(groupKey)}" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md transition-transform transform hover:-translate-y-1"><i class="fa-solid fa-file-signature mr-2"></i> Rédiger la Fiche Globale (${g.machines.length} mach.)</button></div>`;
+  }
+  $("groupModalList").innerHTML = html;
+  $("groupModal").classList.remove("hidden"); $("groupModal").classList.add("flex");
 }
-window.fermerModalGroupe = function() { document.getElementById('groupModal').classList.add('hidden'); document.getElementById('groupModal').classList.remove('flex'); }
+window.fermerModalGroupe = function () { $("groupModal").classList.add("hidden"); $("groupModal").classList.remove("flex"); };
 
-// LA RÉDACTION GLOBALE ET L'ARCHIVAGE DÉFINITIF
-window.redigerFicheGlobaleTerminee = async function(groupKey) {
-    const group = groupedInterventionsGlobal[groupKey]; if (!group) return;
-    const btn = document.getElementById('btnRedigerFicheGroupe'); const orig = btn.innerHTML;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Préparation de la Fiche...'; btn.disabled = true;
+// Préparation de la fiche : l'archivage n'a lieu qu'APRÈS l'impression (voir prepareAndPrint)
+function redigerFicheGlobaleTerminee(groupKey) {
+  const g = groupedInterventionsGlobal[groupKey]; if (!g) return;
+  const allParts = {}; const machinesList = []; const allTechs = new Set();
+  g.machines.forEach((m) => {
+    machinesList.push(m.machine);
+    if (m.technicien) String(m.technicien).split(", ").forEach((t) => allTechs.add(t));
+    const kit = kitsDB[kitKey(m.client, m.machine)];
+    if (kit && m.type === "Préventif") kit.pieces.forEach((p) => {
+      if (!allParts[p.ref]) allParts[p.ref] = { nom: p.nom, qte: 0 };
+      allParts[p.ref].qte += Number(p.qte) || 0;
+    });
+  });
+  window.__pendingArchive = g.machines.map((m) => m.id);
 
+  $("input_fisav").value = ""; $("input_reference").value = "";
+  $("input_client").value = g.client;
+  $("input_machine").value = `${g.machines.length} machine(s) (Voir détail)`;
+  $("input_date").value = localDateStr();
+
+  if (g.type === "Préventif") {
+    $("input_forfait_ref").value = "PREV"; $("input_forfait_nom").value = "SAV-Préventif"; $("input_forfait_diag").value = "Maintenance Préventive Parc";
+    let t = `Dans le cadre du contrat de maintenance préventive A2CIM, une intervention a été réalisée sur un parc de ${g.machines.length} équipement(s).\n\n`;
+    t += `Machines concernées :\n- ${machinesList.join("\n- ")}\n\n`;
+    t += "📌 CONTRÔLES EFFECTUÉS SUR CHAQUE MACHINE :\n- Nettoyage et dépoussiérage intégral de la source et console.\n- Vérification des tensions, des sécurités et connectiques.\n- Contrôle des pressions et purge des circuits.\n";
+    const keys = Object.keys(allParts);
+    if (keys.length > 0) {
+      t += "\n⚙️ REMPLACEMENT GLOBAL DES CONSOMMABLES (Cumul du parc) :\n";
+      keys.forEach((ref) => { t += `✓ ${allParts[ref].qte}x ${allParts[ref].nom} (Réf: ${ref})\n`; });
+    }
+    t += "\n✅ Résultat : Ensemble des équipements remis en production.";
+    $("input_travaux").value = t;
+  } else {
+    $("input_forfait_ref").value = "DEPAN"; $("input_forfait_nom").value = "SAV-Depannage"; $("input_forfait_diag").value = "Intervention Curative Multi-machines";
+    $("input_travaux").value = `Machines concernées : ${machinesList.join(", ")}\n\nDétail des travaux : `;
+  }
+  $("fiche-tech-list").innerHTML = [...allTechs].filter((t) => t && t !== "?").map(techRowHTML).join("");
+  fermerModalGroupe();
+  showView("fiches");
+}
+
+// ---------------------------------------------------------------------
+// AJOUT D'INTERVENTION
+// ---------------------------------------------------------------------
+const addModal = $("addInterventionModal");
+const openAddModal = () => { addModal.classList.remove("hidden"); addModal.classList.add("flex"); };
+const closeAddModal = () => { addModal.classList.add("hidden"); addModal.classList.remove("flex"); };
+if ($("addInterventionBtn")) $("addInterventionBtn").addEventListener("click", openAddModal);
+if ($("closeModalBtn")) $("closeModalBtn").addEventListener("click", closeAddModal);
+if ($("cancelModalBtn")) $("cancelModalBtn").addEventListener("click", closeAddModal);
+
+if ($("addInterventionForm")) {
+  $("addInterventionForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = $("btnSubmit"); const orig = btn.innerHTML;
+    const checked = document.querySelectorAll('input[name="tech"]:checked');
+    if (checked.length === 0) return toast("Veuillez sélectionner au moins un technicien.", "error");
+    const technicien = Array.from(checked).map((cb) => cb.value).join(", ");
+    const client = $("formClient").value, machine = $("formMachine").value, date = $("formDate").value;
+    const type = $("formType").value, frequence = $("formFrequence").value;
+    if (!client || !machine || !date) return toast("Client, machine et date sont obligatoires.", "error");
+
+    btn.innerHTML = SPINNER + "Création..."; btn.disabled = true;
     try {
-        let allParts = {}; let machinesList = []; let allTechs = new Set();
-        
-        // On archive pour vider le tableau de bord
-        for (const m of group.machines) {
-            machinesList.push(m.machine);
-            if (m.technicien) m.technicien.split(', ').forEach(t => allTechs.add(t));
-            
-            await updateDoc(doc(db, "interventions", m.id), { statut: "Archivé" });
-
-            const theKit = kitsDB[m.client + "_" + m.machine];
-            if (theKit && m.type === "Préventif") {
-                theKit.pieces.forEach(p => { if (!allParts[p.ref]) allParts[p.ref] = { nom: p.nom, qte: 0 }; allParts[p.ref].qte += Number(p.qte); });
-            }
+      const base = { type, technicien, statut: "Planifié", frequence };
+      if (machine === "TOUTES_LES_MACHINES") {
+        const batch = writeBatch(db); let ajouts = 0, doublons = 0;
+        for (const m of parcClientsDB[client].machines) {
+          const id = recurrenceId(client, m, date, type);
+          if (knownIds.has(id) || isDuplicate(client, m, date, type)) { doublons++; continue; }
+          batch.set(doc(db, "interventions", id), { client, machine: m, date, ...base, timestamp: serverTimestamp() });
+          ajouts++;
         }
+        if (ajouts > 0) await batch.commit();
+        alert(`${ajouts} intervention(s) planifiée(s) pour ${client} !` + (doublons ? `\n⚠️ ${doublons} doublon(s) ignoré(s).` : ""));
+      } else {
+        const created = await createIntervention({ client, machine, date, ...base });
+        if (!created) alert("⚠️ Cette intervention existe déjà (doublon évité).");
+      }
+      e.target.reset(); closeAddModal();
+    } catch (err) { console.error(err); toast("Erreur lors de la création : " + (err.code || err.message), "error"); }
+    finally { btn.innerHTML = orig; btn.disabled = false; }
+  });
+}
 
-        // AUTO-REMPLISSAGE FUSIONNÉ DE LA FICHE
-        document.getElementById('input_client').value = group.client;
-        document.getElementById('input_machine').value = `${group.machines.length} machine(s) (Voir détail)`;
-        document.getElementById('input_date').value = new Date().toISOString().split('T')[0];
+// ---------------------------------------------------------------------
+// NAVIGATION
+// ---------------------------------------------------------------------
+const navLinks = document.querySelectorAll(".nav-link");
+const appViews = document.querySelectorAll(".app-view");
+const addBtn = $("addInterventionBtn");
+const viewsWithAddBtn = ["dashboard", "planning", "curatif"];
 
-        if (group.type === "Préventif") {
-            document.getElementById('input_forfait_ref').value = "PREV"; document.getElementById('input_forfait_nom').value = "SAV-Préventif"; document.getElementById('input_forfait_diag').value = "Maintenance Préventive Parc";
-            let texteTravaux = `Dans le cadre du contrat de maintenance préventive A2CIM, une intervention a été réalisée sur un parc de ${group.machines.length} équipement(s).\n\n`;
-            texteTravaux += `Machines concernées :\n- ${machinesList.join('\n- ')}\n\n`;
-            texteTravaux += `📌 CONTRÔLES EFFECTUÉS SUR CHAQUE MACHINE :\n- Nettoyage et dépoussiérage intégral de la source et console.\n- Vérification des tensions, des sécurités et connectiques.\n- Contrôle des pressions et purge des circuits.\n`;
-            
-            const partsKeys = Object.keys(allParts);
-            if (partsKeys.length > 0) {
-                texteTravaux += `\n⚙️ REMPLACEMENT GLOBAL DES CONSOMMABLES (Cumul du parc) :\n`;
-                partsKeys.forEach(ref => { texteTravaux += `✓ ${allParts[ref].qte}x ${allParts[ref].nom} (Réf: ${ref})\n`; });
-            }
-            texteTravaux += `\n✅ Résultat : Ensemble des équipements remis en production.`;
-            document.getElementById('input_travaux').value = texteTravaux;
-        } else {
-            document.getElementById('input_forfait_ref').value = "DEPAN"; document.getElementById('input_forfait_nom').value = "SAV-Depannage"; document.getElementById('input_forfait_diag').value = "Intervention Curative Multi-machines"; 
-            document.getElementById('input_travaux').value = `Machines concernées : ${machinesList.join(', ')}\n\nDétail des travaux : `;
-        }
+function showView(target) {
+  if (!$(`view-${target}`)) return;
+  appViews.forEach((v) => v.classList.add("hidden"));
+  $(`view-${target}`).classList.remove("hidden");
+  if (target === "planning" && fullCalendarInstance) setTimeout(() => fullCalendarInstance.render(), 100);
+  if (addBtn) {
+    if (viewsWithAddBtn.includes(target)) { addBtn.classList.remove("opacity-0", "pointer-events-none"); addBtn.classList.add("opacity-100"); }
+    else { addBtn.classList.remove("opacity-100"); addBtn.classList.add("opacity-0", "pointer-events-none"); }
+  }
+  navLinks.forEach((l) => { l.classList.remove("bg-brand-800", "text-white"); l.classList.add("text-slate-400"); });
+  document.querySelectorAll(`[data-view="${target}"]`).forEach((l) => { l.classList.add("bg-brand-800", "text-white"); l.classList.remove("text-slate-400"); });
+}
+navLinks.forEach((link) => link.addEventListener("click", (e) => { e.preventDefault(); showView(link.getAttribute("data-view")); }));
 
-        const techListContainer = document.getElementById('fiche-tech-list'); techListContainer.innerHTML = '';
-        allTechs.forEach(t => { if(t && t !== '?') { techListContainer.innerHTML += `<div class="flex items-center gap-3 mb-2 tech-row"><input type="text" class="tech-name w-1/2 p-2 border border-slate-300 rounded-lg text-sm bg-white font-bold" value="${t}"><input type="number" class="tech-qty-val w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white" placeholder="Qté" value="1" step="0.5"><select class="tech-qty-unit w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white"><option value="Heure(s)">Heure(s)</option><option value="Jour(s)">Jour(s)</option></select><button type="button" class="text-red-500 hover:text-red-700 font-bold px-2" onclick="this.parentElement.remove()">X</button></div>`; } });
+// ---------------------------------------------------------------------
+// FICHE D'INTERVENTION (SAISIE, OCR, IMPRESSION)
+// ---------------------------------------------------------------------
+function techRowHTML(name = "") {
+  return `<div class="flex items-center gap-3 mb-2 tech-row"><input type="text" class="tech-name w-1/2 p-2 border border-slate-300 rounded-lg text-sm bg-white font-bold" placeholder="Nom" value="${esc(name)}"><input type="number" class="tech-qty-val w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white" placeholder="Qté" value="1" step="0.5" min="0"><select class="tech-qty-unit w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white"><option value="Heure(s)">Heure(s)</option><option value="Jour(s)">Jour(s)</option></select><button type="button" data-act="rm-tech" class="text-red-500 hover:text-red-700 font-bold px-2">X</button></div>`;
+}
+// insertAdjacentHTML : ne perd plus les valeurs déjà saisies (l'ancien innerHTML += les effaçait)
+window.addFicheTechnician = function () { $("fiche-tech-list").insertAdjacentHTML("beforeend", techRowHTML()); };
 
-        fermerModalGroupe(); document.querySelector('a[data-view="fiches"]').click();
+if ($("input_date_tirage")) {
+  const n = new Date();
+  $("input_date_tirage").value = localDateStr(n);
+  $("input_heure_tirage").value = `${p2(n.getHours())}:${p2(n.getMinutes())}:${p2(n.getSeconds())}`;
+}
 
-    } catch (e) { console.error(e); alert("Erreur : " + e.message); } finally { btn.innerHTML = orig; btn.disabled = false; }
+window.processOCR = async function () {
+  const fileInput = $("imageInput"), status = $("ocrStatus");
+  if (!fileInput.files.length) return toast("Sélectionnez ou prenez une photo !", "error");
+  const file = fileInput.files[0];
+  if (!file.type.startsWith("image/") || file.size > 15 * 1024 * 1024) return toast("Image invalide ou trop volumineuse (15 Mo max).", "error");
+  if (typeof Tesseract === "undefined") return toast("Module OCR indisponible (connexion requise).", "error");
+  status.style.color = "#2563eb"; status.innerText = "Lecture de l'image en cours...";
+  try {
+    const result = await Tesseract.recognize(file, "fra");
+    const text = result.data.text;
+    const fisav = text.match(/\b\d{2}[A-Z]{2}\d+\b/g); if (fisav) $("input_fisav").value = fisav[0];
+    const ref = text.match(/SAV\s+[A-Z]+/g); if (ref) $("input_reference").value = ref[0];
+    status.style.color = "#16a34a"; status.innerText = "Analyse terminée ! Vérifiez les champs extraits.";
+  } catch (err) { console.error(err); status.style.color = "#dc2626"; status.innerText = "Erreur OCR (connexion requise pour la première utilisation)."; }
 };
 
-// --- AJOUT INTERVENTION (BOUCLIER ANTI-DOUBLONS) ---
-const modal = document.getElementById('addInterventionModal');
-function openModal() { if (modal) { modal.classList.remove('hidden'); modal.classList.add('flex'); } }
-function closeModal() { if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); } }
-if(document.getElementById('addInterventionBtn')) document.getElementById('addInterventionBtn').addEventListener('click', openModal);
-if(document.getElementById('closeModalBtn')) document.getElementById('closeModalBtn').addEventListener('click', closeModal);
-if(document.getElementById('cancelModalBtn')) document.getElementById('cancelModalBtn').addEventListener('click', closeModal);
+window.sendWhatsApp = function () {
+  const fisav = $("input_fisav").value || "N/A", client = $("input_client").value || "Client", machine = $("input_machine").value || "Machine";
+  const message = `Bonjour, voici la fiche d'intervention A2CIM.\n\n*N° FISAV :* ${fisav}\n*Client :* ${client}\n*Machine :* ${machine}\n\n(Veuillez trouver le fichier PDF en pièce jointe).`;
+  window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener");
+};
 
-if(document.getElementById('addInterventionForm')) {
-    document.getElementById('addInterventionForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const btnSubmit = document.getElementById('btnSubmit'); const originalText = btnSubmit.innerHTML;
-        const techCheckboxes = document.querySelectorAll('input[name="tech"]:checked');
-        if (techCheckboxes.length === 0) { alert("⚠️ Veuillez sélectionner au moins un technicien."); return; }
-        const techVal = Array.from(techCheckboxes).map(cb => cb.value).join(', ');
-        btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Création...'; btnSubmit.disabled = true;
-
-        const clientVal = document.getElementById('formClient').value; const machineVal = document.getElementById('formMachine').value; const dateVal = document.getElementById('formDate').value; const typeVal = document.getElementById('formType').value; const freqVal = document.getElementById('formFrequence').value;
-
-        function isDuplicate(c, m, d, t) { return allInterventions.some(i => i.client === c && i.machine === m && i.date === d && i.type === t && i.statut === "Planifié"); }
-
-        try {
-            if (machineVal === "TOUTES_LES_MACHINES") {
-                const machinesDuClient = parcClientsDB[clientVal].machines; let ajouts = 0; let doublons = 0;
-                for (const m of machinesDuClient) {
-                    if (isDuplicate(clientVal, m, dateVal, typeVal)) { doublons++; } else { await addDoc(collection(db, "interventions"), { client: clientVal, machine: m, date: dateVal, type: typeVal, technicien: techVal, statut: "Planifié", frequence: freqVal, timestamp: serverTimestamp() }); ajouts++; }
-                }
-                let alertMsg = `${ajouts} interventions planifiées pour ${clientVal} !`;
-                if (doublons > 0) alertMsg += `\n⚠️ ${doublons} doublon(s) ignoré(s).`; alert(alertMsg);
-            } else {
-                if (isDuplicate(clientVal, machineVal, dateVal, typeVal)) { alert("⚠️ Cette intervention est déjà planifiée ! (Doublon évité)"); } 
-                else { await addDoc(collection(db, "interventions"), { client: clientVal, machine: machineVal, date: dateVal, type: typeVal, technicien: techVal, statut: "Planifié", frequence: freqVal, timestamp: serverTimestamp() }); }
-            }
-            e.target.reset(); closeModal();
-        } catch(err) { console.error(err); alert("Erreur lors de la création"); } finally { btnSubmit.innerHTML = originalText; btnSubmit.disabled = false; }
-    });
+async function archivePending() {
+  const ids = window.__pendingArchive || [];
+  if (ids.length === 0) return;
+  if (!confirm(`La fiche a bien été imprimée / enregistrée ?\n\nArchiver les ${ids.length} intervention(s) du tableau de bord ?`)) return;
+  try {
+    const batch = writeBatch(db);
+    ids.forEach((id) => batch.update(doc(db, "interventions", id), { statut: "Archivé" }));
+    await batch.commit();
+    window.__pendingArchive = [];
+    toast("Interventions archivées.", "success");
+  } catch (err) { console.error(err); toast("Archivage échoué : " + (err.code || err.message), "error"); }
 }
 
-// Navigation & Bouton contextuel
-const navLinks = document.querySelectorAll('.nav-link'); const appViews = document.querySelectorAll('.app-view'); const addBtn = document.getElementById('addInterventionBtn'); const allowedViewsForAddBtn = ['dashboard', 'planning', 'curatif'];
-navLinks.forEach(link => {
-    link.addEventListener('click', (e) => {
-        e.preventDefault(); const targetView = link.getAttribute('data-view');
-        appViews.forEach(view => view.classList.add('hidden')); document.getElementById(`view-${targetView}`).classList.remove('hidden');
-        if (targetView === 'planning' && fullCalendarInstance) setTimeout(() => { fullCalendarInstance.render(); }, 100);
-        if (addBtn) { if (allowedViewsForAddBtn.includes(targetView)) { addBtn.classList.remove('opacity-0', 'pointer-events-none'); addBtn.classList.add('opacity-100'); } else { addBtn.classList.remove('opacity-100'); addBtn.classList.add('opacity-0', 'pointer-events-none'); } }
-        navLinks.forEach(l => { l.classList.remove('bg-brand-800', 'text-white'); l.classList.add('text-slate-400'); }); document.querySelectorAll(`[data-view="${targetView}"]`).forEach(activeL => { activeL.classList.add('bg-brand-800', 'text-white'); activeL.classList.remove('text-slate-400'); });
+window.prepareAndPrint = async function () {
+  const fisavRaw = $("input_fisav").value.trim(), clientRaw = $("input_client").value.trim();
+  const machineRaw = $("input_machine").value.trim(), dateRaw = $("input_date").value;
+  const missing = [];
+  if (!fisavRaw) missing.push("N° FISAV"); if (!clientRaw) missing.push("Client");
+  if (!machineRaw) missing.push("Machine"); if (!dateRaw) missing.push("Date d'intervention");
+  if (missing.length > 0) return alert("Veuillez remplir :\n- " + missing.join("\n- "));
+
+  const btn = $("btn-generate-main");
+  const resetBtn = () => { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-print mr-2"></i> Sauvegarder & Imprimer le PDF'; };
+  btn.disabled = true; btn.innerHTML = SPINNER + "Préparation PDF...";
+
+  const fmt = (s) => { const d = parseLocal(s); return `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${String(d.getFullYear()).slice(-2)}`; };
+  const reference = $("input_reference").value, dateTirage = $("input_date_tirage").value, heureTirage = $("input_heure_tirage").value;
+  const travaux = $("input_travaux").value;
+
+  $("p_fisav").innerText = fisavRaw; $("p_bottom_fisav").innerText = fisavRaw; $("p_ref").innerText = reference;
+  $("p_date").innerText = fmt(dateRaw);
+  $("p_date_tirage").innerText = dateTirage ? fmt(dateTirage) : ""; $("p_heure_tirage").innerText = heureTirage;
+  $("p_client").innerText = clientRaw; $("p_machine").innerText = machineRaw; $("p_ref_machine").innerText = machineRaw;
+  $("p_travaux_content").innerHTML = esc(travaux).replace(/\n/g, "<br>");
+
+  const refForfait = $("input_forfait_ref").value, nomForfait = $("input_forfait_nom").value, diagForfait = $("input_forfait_diag").value;
+  let rows = `<tr><td>FHSAV-${esc(refForfait)}</td><td>Forfait Horaire ${esc(nomForfait)}<br><br><span style="padding-left:15px;">${esc(diagForfait)}</span></td><td></td><td style="text-align:right;">0,00</td><td style="text-align:right;">0,00</td></tr>`;
+  const techNames = [], detailTechniciens = []; let totalQty = 0, currentUnit = "";
+  document.querySelectorAll(".tech-row").forEach((row) => {
+    const name = row.querySelector(".tech-name").value.trim().toUpperCase();
+    const qty = parseFloat(row.querySelector(".tech-qty-val").value) || 0;
+    const unit = row.querySelector(".tech-qty-unit").value;
+    if (!name) return;
+    techNames.push(name); detailTechniciens.push({ nom: name, quantite: qty, unite: unit }); totalQty += qty; currentUnit = unit;
+    rows += `<tr><td style="padding-top:10px;">FHTEC-EM2</td><td style="padding-top:10px;">Heure Technicien ${esc(name)}</td><td style="padding-top:10px;text-align:center;">${qty} ${unit === "Heure(s)" ? "H" : "J"}</td><td style="padding-top:10px;text-align:right;">0,00</td><td style="padding-top:10px;text-align:right;">0,00</td></tr>`;
+  });
+  rows += '<tr><td style="height:30px;"></td><td></td><td></td><td></td><td></td></tr>';
+  $("p_lignes_prestations").innerHTML = rows;
+  const allTechs = techNames.join(", ");
+  $("p_nom_tech").innerText = allTechs; $("p_realise_par").innerText = allTechs;
+  const total = totalQty > 0 ? `${totalQty}${currentUnit === "Heure(s)" ? " H" : " J"}` : "0,00";
+  $("p_somme_reporter").innerText = total;
+
+  try {
+    await addDoc(collection(db, "historique_interventions"), {
+      numero_fisav: fisavRaw, reference_intervention: reference, client: clientRaw, machine: machineRaw,
+      date_intervention: dateRaw, date_tirage: `${dateTirage} ${heureTirage}`, diagnostic: diagForfait,
+      travaux_realises: travaux, techniciens_intervenants: detailTechniciens, total_temps: total,
+      uid: currentUser.uid, email: currentUser.email, timestamp_creation: serverTimestamp()
     });
+  } catch (err) {
+    console.error("Erreur historique :", err);
+    if (!confirm("L'historique n'a pas pu être enregistré (" + (err.code || err.message) + ").\nImprimer quand même ?")) { resetBtn(); return; }
+  }
+
+  const originalTitle = document.title;
+  document.title = `Fiche_${fisavRaw.replace(/[^a-zA-Z0-9]/g, "_")}_${clientRaw.replace(/[^a-zA-Z0-9]/g, "_")}`;
+  window.addEventListener("afterprint", async () => {
+    document.title = originalTitle; resetBtn();
+    await archivePending();
+  }, { once: true });
+  setTimeout(() => window.print(), 300);
+  setTimeout(resetBtn, 20000);
+};
+
+// ---------------------------------------------------------------------
+// ÉCOUTEURS DÉLÉGUÉS (remplacent tous les onclick/onsubmit inline dynamiques)
+// ---------------------------------------------------------------------
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-act]");
+  if (!el) return;
+  const { act, client, machine, id, key, ref, nom } = el.dataset;
+  switch (act) {
+    case "kit": return window.ouvrirModalKit(client, machine);
+    case "del-machine": return supprimerMachineParc(id, machine);
+    case "del-client": return supprimerClientParc(id);
+    case "del-ht": return supprimerHypertherm(id);
+    case "group": return ouvrirModalGroupe(key);
+    case "open-intv": window.fermerModalGroupe(); return ouvrirActionModal(id);
+    case "fiche-globale": return redigerFicheGlobaleTerminee(key);
+    case "rm-tech": return el.closest(".tech-row").remove();
+    case "logout": return logout();
+    case "del-piece":
+      tempKitPieces = tempKitPieces.filter((p) => !(p.ref === ref && p.nom === nom));
+      return afficherPiecesKitTemp();
+    case "copy-ht": {
+      const ht = hyperthermDB.find((h) => h.id === id); if (!ht) return;
+      const text = purchaseText(ht, getNextHyperthermCycle(ht.dateInstallation, ht.shifts || 1, ht.modele));
+      return navigator.clipboard.writeText(text).then(() => toast("Liste copiée !", "success")).catch(() => toast("Copie impossible.", "error"));
+    }
+  }
 });
 
-// ==========================================
-// GESTION NATIVE DE LA FICHE D'INTERVENTION
-// ==========================================
-function escapeHtml(str) { if (!str) return ""; return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
-let pad = (n) => n < 10 ? '0' + n : n; let now = new Date();
-if(document.getElementById('input_date_tirage')) { document.getElementById('input_date_tirage').valueAsDate = now; document.getElementById('input_heure_tirage').value = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds()); }
+document.addEventListener("submit", (e) => {
+  const form = e.target.closest("[data-machine-form]");
+  if (!form) return;
+  e.preventDefault();
+  const input = form.querySelector('input[name="machine"]');
+  const nom = input.value.trim(); if (!nom) return;
+  ajouterMachineParc(form.dataset.machineForm, nom);
+  input.value = "";
+});
 
-window.addFicheTechnician = function() {
-    document.getElementById('fiche-tech-list').innerHTML += `<div class="flex items-center gap-3 mb-2 tech-row"><input type="text" class="tech-name w-1/2 p-2 border border-slate-300 rounded-lg text-sm bg-white font-bold" placeholder="Nom"><input type="number" class="tech-qty-val w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white" placeholder="Qté" value="1" step="0.5"><select class="tech-qty-unit w-1/4 p-2 border border-slate-300 rounded-lg text-sm bg-white"><option value="Heure(s)">Heure(s)</option><option value="Jour(s)">Jour(s)</option></select><button type="button" class="text-red-500 hover:text-red-700 font-bold px-2" onclick="this.parentElement.remove()">X</button></div>`;
-};
-
-window.processOCR = async function() {
-    const fileInput = document.getElementById('imageInput'); const statusDiv = document.getElementById('ocrStatus');
-    if (!fileInput.files.length) { alert("Sélectionnez ou prenez une photo !"); return; }
-    statusDiv.style.color = "#2563eb"; statusDiv.innerText = "Lecture de l'image en cours...";
-    try {
-        const result = await Tesseract.recognize(fileInput.files[0], 'fra'); const texteExtrait = result.data.text;
-        const matchFisav = texteExtrait.match(/\b\d{2}[A-Z]{2}\d+\b/g); if (matchFisav) document.getElementById('input_fisav').value = matchFisav[0];
-        const matchRef = texteExtrait.match(/SAV\s+[A-Z]+/g); if (matchRef) document.getElementById('input_reference').value = matchRef[0];
-        statusDiv.style.color = "#16a34a"; statusDiv.innerText = "Analyse terminée !";
-    } catch (error) { statusDiv.style.color = "#dc2626"; statusDiv.innerText = "Erreur OCR."; }
-};
-
-window.sendWhatsApp = function() {
-    let fisav = document.getElementById('input_fisav').value || "N/A"; let client = document.getElementById('input_client').value || "Client"; let machine = document.getElementById('input_machine').value || "Machine";
-    let message = `Bonjour, voici la fiche d'intervention A2CIM.\n\n*N° FISAV :* ${fisav}\n*Client :* ${client}\n*Machine :* ${machine}\n\n(Veuillez trouver le fichier PDF en pièce jointe).`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
-};
-
-window.prepareAndPrint = function() {
-    const fisavCheck = document.getElementById('input_fisav').value.trim(); const clientCheck = document.getElementById('input_client').value.trim(); const machineCheck = document.getElementById('input_machine').value.trim(); const dateCheck = document.getElementById('input_date').value;
-    const champsManquants = [];
-    if (!fisavCheck) champsManquants.push("N° FISAV"); if (!clientCheck) champsManquants.push("Client"); if (!machineCheck) champsManquants.push("Machine"); if (!dateCheck) champsManquants.push("Date d'intervention");
-    if (champsManquants.length > 0) { alert("Veuillez remplir :\n- " + champsManquants.join("\n- ")); return; }
-
-    const btnGenerer = document.getElementById('btn-generate-main'); btnGenerer.disabled = true; btnGenerer.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Préparation PDF...';
-
-    let fisav = document.getElementById('input_fisav').value; document.getElementById('p_fisav').innerText = fisav; document.getElementById('p_bottom_fisav').innerText = fisav;
-    let reference = document.getElementById('input_reference').value; document.getElementById('p_ref').innerText = reference;
-    let dateVal = document.getElementById('input_date').value; if(dateVal) { let d = new Date(dateVal); document.getElementById('p_date').innerText = pad(d.getDate()) + '/' + pad(d.getMonth()+1) + '/' + d.getFullYear().toString().slice(-2); }
-    let dateTirageVal = document.getElementById('input_date_tirage').value; if(dateTirageVal) { let dt = new Date(dateTirageVal); document.getElementById('p_date_tirage').innerText = pad(dt.getDate()) + '/' + pad(dt.getMonth()+1) + '/' + dt.getFullYear().toString().slice(-2); }
-    let heureTirage = document.getElementById('input_heure_tirage').value; document.getElementById('p_heure_tirage').innerText = heureTirage;
-    let client = document.getElementById('input_client').value; document.getElementById('p_client').innerText = client;
-    let machine = document.getElementById('input_machine').value; document.getElementById('p_machine').innerText = machine; document.getElementById('p_ref_machine').innerText = machine;
-    let travauxBruts = document.getElementById('input_travaux').value; document.getElementById('p_travaux_content').innerHTML = escapeHtml(travauxBruts).replace(/\n/g, '<br>');
-    
-    let tbody = document.getElementById('p_lignes_prestations'); tbody.innerHTML = '';
-    let refForfait = document.getElementById('input_forfait_ref').value; let nomForfait = document.getElementById('input_forfait_nom').value; let diagForfait = document.getElementById('input_forfait_diag').value;
-    tbody.innerHTML += `<tr><td>FHSAV-${escapeHtml(refForfait)}</td><td>Forfait Horaire ${escapeHtml(nomForfait)}<br><br><span style="padding-left:15px;">${escapeHtml(diagForfait)}</span></td><td></td><td style="text-align: right;">0,00</td><td style="text-align: right;">0,00</td></tr>`;
-    
-    let techNames = []; let detailTechniciens = []; let totalQty = 0; let currentUnit = "";
-    document.querySelectorAll('.tech-row').forEach((row) => {
-        let name = row.querySelector('.tech-name').value.toUpperCase(); let qtyVal = parseFloat(row.querySelector('.tech-qty-val').value) || 0; let unit = row.querySelector('.tech-qty-unit').value;
-        if (name.trim() !== '') {
-            techNames.push(name); detailTechniciens.push({ nom: name, quantite: qtyVal, unite: unit }); totalQty += qtyVal; currentUnit = unit;
-            tbody.innerHTML += `<tr><td style="padding-top: 10px;">FHTEC-EM2</td><td style="padding-top: 10px;">Heure Technicien ${escapeHtml(name)}</td><td style="padding-top: 10px; text-align: center;">${qtyVal} ${unit === 'Heure(s)' ? 'H' : 'J'}</td><td style="padding-top: 10px; text-align: right;">0,00</td><td style="padding-top: 10px; text-align: right;">0,00</td></tr>`;
-        }
-    });
-    tbody.innerHTML += `<tr><td style="height: 30px;"></td><td></td><td></td><td></td><td></td></tr>`;
-    let allTechs = techNames.join(', '); document.getElementById('p_nom_tech').innerText = allTechs; document.getElementById('p_realise_par').innerText = allTechs;
-    let totalFormatte = totalQty > 0 ? (totalQty + (currentUnit === 'Heure(s)' ? ' H' : ' J')) : '0,00'; document.getElementById('p_somme_reporter').innerText = totalFormatte;
-
-    const historiqueData = {
-        numero_fisav: fisav, reference_intervention: reference, client: client, machine: machine,
-        date_intervention: dateVal, date_tirage: dateTirageVal + " " + heureTirage, diagnostic: diagForfait,
-        travaux_realises: travauxBruts, techniciens_intervenants: detailTechniciens, total_temps: totalFormatte, 
-        timestamp_creation: serverTimestamp()
-    };
-    addDoc(collection(db, "historique_interventions"), historiqueData).catch((error) => console.error("Erreur sync :", error));
-
-    const originalTitle = document.title; const fisavNom = fisavCheck.replace(/[^a-zA-Z0-9]/g, '_'); const clientNom = clientCheck.replace(/[^a-zA-Z0-9]/g, '_'); document.title = `Fiche_${fisavNom}_${clientNom}`;
-
-    setTimeout(() => {
-        window.print(); document.title = originalTitle;
-        setTimeout(() => { btnGenerer.disabled = false; btnGenerer.innerHTML = '<i class="fa-solid fa-print mr-2"></i> Sauvegarder & Imprimer le PDF'; }, 1000);
-    }, 500);
-};
-
-if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(err => console.error('Erreur SW', err)); }); }
+// ---------------------------------------------------------------------
+// SERVICE WORKER
+// ---------------------------------------------------------------------
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch((err) => console.error("Erreur SW", err)));
+}

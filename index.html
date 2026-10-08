@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1e3a8a">
     <title>GMAO pro A2CIM - Tableau de bord</title>
 
-    <link rel="stylesheet" href="style.css?v=38">
+    <link rel="stylesheet" href="style.css?v=39">
     <link rel="manifest" href="manifest.json">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -20,12 +20,12 @@
             theme: {
                 extend: {
                     fontFamily: { sans: ['Inter', 'sans-serif'], },
-                    colors: { brand: { 50: '#eff6ff', 100: '#dbeafe', 500: '#3b82f6', 800: '#1e40af', 900: '#1e3a8a' } }
+                    colors: { brand: { 50: '#eff6ff', 100: '#dbeafe', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8', 800: '#1e40af', 900: '#1e3a8a' } }
                 }
             }
         }
     </script>
-    
+
     <style>
         .fc { --fc-button-bg-color: #3b82f6; --fc-button-border-color: #3b82f6; --fc-button-hover-bg-color: #2563eb; --fc-button-hover-border-color: #2563eb; --fc-button-active-bg-color: #1e40af; }
         .fc-toolbar-title { font-size: 1.25rem !important; font-weight: 700 !important; color: #1e293b; }
@@ -41,7 +41,7 @@
 
         .print-only { display: none; }
         @media print {
-            @page { size: A4; margin: 5mm; } 
+            @page { size: A4; margin: 5mm; }
             body { background: white !important; font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: black; }
             aside, header, nav, #addInterventionBtn, #lockScreen, .app-view { display: none !important; }
             #view-fiches { display: none !important; }
@@ -74,8 +74,25 @@
 </head>
 <body class="text-slate-800 antialiased font-sans flex h-screen overflow-hidden">
 
-    <div id="lockScreen" class="fixed inset-0 bg-brand-900 z-50 hidden items-center justify-center p-4"><div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-8 text-center"><div class="w-16 h-16 bg-brand-50 text-brand-900 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-inner"><i class="fa-solid fa-lock"></i></div><h2 class="text-xl font-bold text-slate-800 mb-1">GMAO pro A2CIM</h2><form id="pinForm" class="space-y-4 mt-6"><input type="password" id="pinInput" placeholder="Code d'accès" required class="w-full text-center tracking-widest text-lg px-4 py-3 border border-slate-300 rounded-xl focus:ring-brand-500 bg-slate-50"><button type="submit" class="w-full bg-brand-500 hover:bg-brand-600 text-white font-medium py-3 rounded-xl shadow-sm">Déverrouiller</button></form></div></div>
-    
+    <!-- ECRAN DE CONNEXION (Firebase Auth) : visible par défaut, masqué par firebase-init.js une fois connecté -->
+    <div id="lockScreen" class="fixed inset-0 bg-brand-900 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-8 text-center">
+            <div class="w-16 h-16 bg-brand-50 text-brand-900 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-inner"><i class="fa-solid fa-lock"></i></div>
+            <h2 class="text-xl font-bold text-slate-800 mb-1">GMAO pro A2CIM</h2>
+            <p class="text-sm text-slate-500">Connexion sécurisée</p>
+            <form id="loginForm" class="space-y-4 mt-6">
+                <input type="email" id="loginEmail" placeholder="Email" required autocomplete="username" class="w-full px-4 py-3 border border-slate-300 rounded-xl bg-slate-50 focus:ring-2 focus:ring-brand-500">
+                <input type="password" id="loginPassword" placeholder="Mot de passe" required autocomplete="current-password" class="w-full px-4 py-3 border border-slate-300 rounded-xl bg-slate-50 focus:ring-2 focus:ring-brand-500">
+                <label class="flex items-center gap-2 text-sm text-slate-600 text-left cursor-pointer select-none">
+                    <input type="checkbox" id="loginRemember" checked class="w-4 h-4 rounded border-slate-300 text-brand-500">
+                    <span>Rester connecté sur cet appareil</span>
+                </label>
+                <p id="authError" class="hidden text-sm text-red-600 font-medium"></p>
+                <button type="submit" id="loginBtn" class="w-full bg-brand-500 hover:bg-brand-600 text-white font-medium py-3 rounded-xl shadow-sm disabled:opacity-60">Se connecter</button>
+            </form>
+        </div>
+    </div>
+
     <aside class="hidden md:flex flex-col w-64 bg-brand-900 text-white shadow-xl h-full z-20 shrink-0">
         <div class="p-6 flex items-center space-x-3 border-b border-brand-800"><div class="bg-white text-brand-900 p-2 rounded-lg"><i class="fa-solid fa-cogs text-xl"></i></div><h1 class="text-2xl font-bold tracking-wider">GMAO <span class="text-blue-300">A2CIM</span></h1></div>
         <nav class="flex-1 px-4 py-6 space-y-2 overflow-y-auto custom-scroll">
@@ -92,10 +109,10 @@
         <header class="md:hidden bg-brand-900 text-white p-4 flex justify-between items-center shadow-md z-20 shrink-0"><div class="flex items-center space-x-2"><i class="fa-solid fa-cogs text-blue-300"></i><h1 class="text-xl font-bold tracking-wider">GMAO <span class="text-blue-300">A2CIM</span></h1></div></header>
 
         <main class="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 custom-scroll relative w-full h-full bg-slate-50/50">
-            
+
             <div id="view-dashboard" class="app-view">
                 <header class="mb-8"><h2 class="text-2xl font-bold text-slate-800">Aperçu du Parc</h2><p class="text-slate-500 text-sm mt-1">Centre de contrôle. Cliquez sur un client pour gérer les interventions et éditer les fiches.</p></header>
-                
+
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center"><div class="flex items-center justify-between mb-2"><h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Planifiées</h3><div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600"><i class="fa-solid fa-calendar-day"></i></div></div><p id="kpi-total" class="text-3xl font-bold text-slate-800">0</p></div>
                     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center"><div class="flex items-center justify-between mb-2"><h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">En retard</h3><div class="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-red-600"><i class="fa-solid fa-triangle-exclamation"></i></div></div><p id="kpi-retard" class="text-3xl font-bold text-red-600">0</p></div>
@@ -103,7 +120,6 @@
                     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center"><div class="flex items-center justify-between mb-2"><h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">À Éditer (Fiches)</h3><div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-600"><i class="fa-solid fa-file-signature"></i></div></div><p id="kpi-termine" class="text-3xl font-bold text-slate-800">0</p></div>
                 </div>
 
-                <!-- NOUVELLE GRILLE 3 COLONNES -->
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     <div class="bg-white p-4 rounded-2xl border border-red-100 shadow-sm"><h2 class="text-lg font-bold text-red-600 mb-4 flex items-center"><i class="fa-solid fa-fire mr-2"></i> Urgences & Retards</h2><div id="urgent-tasks-container" class="space-y-3 max-h-[450px] overflow-y-auto custom-scroll pr-2"></div></div>
                     <div class="bg-white p-4 rounded-2xl border border-blue-100 shadow-sm"><h2 class="text-lg font-bold text-brand-600 mb-4 flex items-center"><i class="fa-solid fa-calendar-check mr-2"></i> Préventif à venir</h2><div id="upcoming-tasks-container" class="space-y-3 max-h-[450px] overflow-y-auto custom-scroll pr-2"></div></div>
@@ -265,13 +281,13 @@
             <button onclick="sauvegarderKitFinal()" class="w-full py-3 bg-green-500 text-white font-bold rounded-xl shadow-sm hover:bg-green-600 transition-colors"><i class="fa-solid fa-save mr-2"></i> Enregistrer Nomenclature</button>
         </div>
     </div>
-    
+
     <!-- Modal Ajout Intervention -->
     <div id="addInterventionModal" class="fixed inset-0 bg-slate-900 bg-opacity-60 hidden items-center justify-center z-[70] px-4 backdrop-blur-sm transition-opacity"><div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full flex flex-col max-h-[90vh]"><div class="px-6 py-4 border-b flex justify-between items-center bg-slate-50"><h3 id="modalAddTitle" class="text-lg font-bold text-slate-800">Nouvelle Intervention</h3><button id="closeModalBtn" class="text-slate-400 hover:text-slate-700"><i class="fa-solid fa-xmark text-lg"></i></button></div><div class="p-6 overflow-y-auto custom-scroll"><form id="addInterventionForm" class="space-y-4"><div class="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label class="block text-sm font-medium text-slate-700 mb-1">Client</label><select id="formClient" required class="w-full px-3 py-2 border rounded-xl text-sm"></select></div><div><label class="block text-sm font-medium text-slate-700 mb-1">Machine</label><select id="formMachine" required class="w-full px-3 py-2 border rounded-xl text-sm"></select></div></div><div><label class="block text-sm font-medium text-slate-700 mb-1">Type</label><select id="formType" required class="w-full px-3 py-2 border rounded-xl text-sm"><option value="Préventif">Préventif</option><option value="Curatif">Curatif</option></select></div><div><label class="block text-sm font-medium text-slate-700 mb-1">Technicien(s) Assigné(s)</label><div class="grid grid-cols-2 gap-2 text-sm bg-slate-50 p-3 rounded-xl border border-slate-200"><label class="flex items-center space-x-2"><input type="checkbox" name="tech" value="NABIL" class="w-4 h-4 text-brand-500 rounded border-slate-300"> <span>NABIL</span></label><label class="flex items-center space-x-2"><input type="checkbox" name="tech" value="MEHDI" class="w-4 h-4 text-brand-500 rounded border-slate-300"> <span>MEHDI</span></label><label class="flex items-center space-x-2"><input type="checkbox" name="tech" value="BELKADI" class="w-4 h-4 text-brand-500 rounded border-slate-300"> <span>BELKADI</span></label><label class="flex items-center space-x-2"><input type="checkbox" name="tech" value="ABDELOUAHED" class="w-4 h-4 text-brand-500 rounded border-slate-300"> <span>ABDELOUAHED</span></label><label class="flex items-center space-x-2"><input type="checkbox" name="tech" value="O. LAFNISHA" class="w-4 h-4 text-brand-500 rounded border-slate-300"> <span>O. LAFNISHA</span></label><label class="flex items-center space-x-2"><input type="checkbox" name="tech" value="ZOUHAIR" class="w-4 h-4 text-brand-500 rounded border-slate-300"> <span>ZOUHAIR</span></label></div></div><div class="bg-slate-50 p-4 rounded-xl border mt-2"><div class="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label class="block text-sm font-medium text-slate-700 mb-1">Date</label><input type="date" id="formDate" required class="w-full px-3 py-2 border rounded-xl text-sm"></div><div id="frequenceContainer"><label class="block text-sm font-medium text-slate-700 mb-1">Récurrence</label><select id="formFrequence" class="w-full px-3 py-2 border rounded-xl text-sm"><option value="Ponctuel">Aucune</option><option value="Mensuel">Mensuelle</option><option value="Trimestriel">Trimestrielle</option><option value="Semestriel">Semestrielle</option><option value="Annuel">Annuelle</option></select></div></div></div></form></div><div class="px-6 py-4 border-t bg-slate-50 flex justify-end space-x-3"><button type="button" id="cancelModalBtn" class="px-4 py-2.5 text-sm bg-white border rounded-xl">Annuler</button><button type="submit" form="addInterventionForm" id="btnSubmit" class="px-4 py-2.5 text-sm text-white bg-brand-500 rounded-xl">Enregistrer</button></div></div></div>
 
     <!-- Nav Mobile -->
     <nav class="md:hidden fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 flex overflow-x-auto custom-scroll py-2 pb-safe z-30 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-        <a href="#" data-view="dashboard" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-brand-850 w-20"><i class="fa-solid fa-chart-pie text-lg mb-1"></i><span class="text-[9px] font-medium">Bord</span></a>
+        <a href="#" data-view="dashboard" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-brand-800 w-20"><i class="fa-solid fa-chart-pie text-lg mb-1"></i><span class="text-[9px] font-medium">Bord</span></a>
         <a href="#" data-view="planning" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-calendar-days text-lg mb-1"></i><span class="text-[9px] font-medium">Global</span></a>
         <a href="#" data-view="curatif" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-triangle-exclamation text-lg mb-1"></i><span class="text-[9px] font-medium">Curatif</span></a>
         <a href="#" data-view="parc" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-industry text-lg mb-1"></i><span class="text-[9px] font-medium">Parc</span></a>
@@ -305,6 +321,6 @@
         </div>
     </div>
 
-    <script type="module" src="app.js?v=38"></script>
+    <script type="module" src="app.js?v=39"></script>
 </body>
 </html>

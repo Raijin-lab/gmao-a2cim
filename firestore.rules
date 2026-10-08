@@ -1,0 +1,79 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- Fonctions utilitaires ----------
+    function signedIn() {
+      return request.auth != null;
+    }
+    // L'utilisateur doit avoir un document /users/{uid} (créé à la main dans la console)
+    function isActive() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+    function isAdmin() {
+      return isActive()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    function validStatut(d) {
+      return d.statut in ['Planifié', 'En cours', 'Terminé', 'En retard', 'Archivé'];
+    }
+    function validType(d) {
+      return d.type in ['Préventif', 'Curatif'];
+    }
+
+    // ---------- Utilisateurs : lecture de son propre profil uniquement ----------
+    // role = 'admin' (chef) ou 'tech' (technicien)
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // ---------- Parc clients : seul l'admin modifie ----------
+    match /clients/{id} {
+      allow read: if isActive();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ---------- Nomenclatures ----------
+    match /kits/{id} {
+      allow read, create, update: if isActive();
+      allow delete: if isAdmin();
+    }
+
+    // ---------- Hypertherm ----------
+    match /hypertherm/{id} {
+      allow read: if isActive();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ---------- Interventions ----------
+    match /interventions/{id} {
+      allow read: if isActive();
+      allow create: if isActive()
+        && validStatut(request.resource.data)
+        && validType(request.resource.data)
+        && request.resource.data.client is string
+        && request.resource.data.machine is string
+        && request.resource.data.date is string;
+      allow update: if isActive()
+        && validStatut(request.resource.data)
+        && validType(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    // ---------- Historique des fiches : écriture seule, jamais modifiable ----------
+    match /historique_interventions/{id} {
+      allow read: if isActive();
+      allow create: if isActive()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.numero_fisav is string;
+      allow update, delete: if false;
+    }
+
+    // ---------- Tout le reste est interdit ----------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
