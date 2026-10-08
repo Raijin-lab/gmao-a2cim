@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1e3a8a">
     <title>GMAO pro A2CIM - Tableau de bord</title>
 
-    <link rel="stylesheet" href="style.css?v=41">
+    <link rel="stylesheet" href="style.css?v=42">
     <link rel="manifest" href="manifest.json">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -102,12 +102,8 @@
             <a href="#" data-view="curatif" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-triangle-exclamation w-6 text-center"></i><span class="font-medium">Interv. Curatives</span></a>
             <a href="#" data-view="parc" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-industry w-6 text-center"></i><span class="font-medium">Gestion du Parc</span></a>
             <a href="#" data-view="hypertherm" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-fire-flame-curved w-6 text-center text-amber-500"></i><span class="font-medium">Expertise HT</span></a>
-            
-            <!-- LA LIGNE RESTAURÉE ! -->
             <a href="#" data-view="docs" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-book-open w-6 text-center"></i><span class="font-medium">Base Doc.</span></a>
-            
             <a href="#" data-view="fiches" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-clipboard-list w-6 text-center"></i><span class="font-medium">Fiches Interv.</span></a>
-            <a href="#" data-view="historique" class="nav-link flex items-center space-x-3 px-4 py-3 text-brand-100 hover:bg-brand-800 hover:text-white rounded-xl"><i class="fa-solid fa-box-archive w-6 text-center"></i><span class="font-medium">Historique</span></a>
         </nav>
     </aside>
 
@@ -190,10 +186,44 @@
                 <div id="parc-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
             </div>
 
-            <!-- LE BLOC RESTAURÉ : BASE DOCUMENTAIRE -->
+            <!-- VUE BASE DOCUMENTAIRE (RÉTABLIE) -->
             <div id="view-docs" class="app-view hidden">
                 <header class="mb-6"><h2 class="text-2xl font-bold text-slate-800">Base Documentaire Technique</h2></header>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="docsGridContainer"></div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="docsGridContainer">
+                    <div class="bg-white py-6 px-4 rounded-xl shadow-sm border border-slate-100 flex flex-col items-center justify-center cursor-pointer hover:shadow-md transition-all hover:-translate-y-1">
+                        <i class="fa-solid fa-folder text-amber-500 text-4xl mb-3"></i><span class="font-bold text-slate-800 text-sm text-center">Hypertherm</span>
+                    </div>
+                    <div class="bg-white py-6 px-4 rounded-xl shadow-sm border border-slate-100 flex flex-col items-center justify-center cursor-pointer hover:shadow-md transition-all hover:-translate-y-1">
+                        <i class="fa-solid fa-folder text-amber-500 text-4xl mb-3"></i><span class="font-bold text-slate-800 text-sm text-center">Messer</span>
+                    </div>
+                    <div class="bg-white py-6 px-4 rounded-xl shadow-sm border border-slate-100 flex flex-col items-center justify-center cursor-pointer hover:shadow-md transition-all hover:-translate-y-1">
+                        <i class="fa-solid fa-folder text-amber-500 text-4xl mb-3"></i><span class="font-bold text-slate-800 text-sm text-center">Gullco</span>
+                    </div>
+                    <div class="bg-white py-6 px-4 rounded-xl shadow-sm border border-slate-100 flex flex-col items-center justify-center cursor-pointer hover:shadow-md transition-all hover:-translate-y-1">
+                        <i class="fa-solid fa-folder text-amber-500 text-4xl mb-3"></i><span class="font-bold text-slate-800 text-sm text-center">Sturmer</span>
+                    </div>
+                    <div class="bg-white py-6 px-4 rounded-xl shadow-sm border border-slate-100 flex flex-col items-center justify-center cursor-pointer hover:shadow-md transition-all hover:-translate-y-1">
+                        <i class="fa-solid fa-folder text-amber-500 text-4xl mb-3"></i><span class="font-bold text-slate-800 text-sm text-center">Behringer</span>
+                    </div>
+                    <div class="bg-white py-6 px-4 rounded-xl shadow-sm border border-slate-100 flex flex-col items-center justify-center cursor-pointer hover:shadow-md transition-all hover:-translate-y-1">
+                        <i class="fa-solid fa-folder text-amber-500 text-4xl mb-3"></i><span class="font-bold text-slate-800 text-sm text-center">Picot</span>
+                    </div>
+                    <div class="bg-white py-6 px-4 rounded-xl shadow-sm border border-slate-100 flex flex-col items-center justify-center cursor-pointer hover:shadow-md transition-all hover:-translate-y-1">
+                        <i class="fa-solid fa-folder text-amber-500 text-4xl mb-3"></i><span class="font-bold text-slate-800 text-sm text-center">Dimeco</span>
+                    </div>
+                    <div class="bg-white py-6 px-4 rounded-xl shadow-sm border border-slate-100 flex flex-col items-center justify-center cursor-pointer hover:shadow-md transition-all hover:-translate-y-1">
+                        <i class="fa-solid fa-folder text-amber-500 text-4xl mb-3"></i><span class="font-bold text-slate-800 text-sm text-center">Cesurbend</span>
+                    </div>
+                    <div class="bg-white py-6 px-4 rounded-xl shadow-sm border border-slate-100 flex flex-col items-center justify-center cursor-pointer hover:shadow-md transition-all hover:-translate-y-1">
+                        <i class="fa-solid fa-folder text-amber-500 text-4xl mb-3"></i><span class="font-bold text-slate-800 text-sm text-center">Baisheng Laser</span>
+                    </div>
+                    <div class="bg-white py-6 px-4 rounded-xl shadow-sm border border-slate-100 flex flex-col items-center justify-center cursor-pointer hover:shadow-md transition-all hover:-translate-y-1">
+                        <i class="fa-solid fa-folder text-amber-500 text-4xl mb-3"></i><span class="font-bold text-slate-800 text-sm text-center">Ermaksan</span>
+                    </div>
+                    <div class="bg-white py-6 px-4 rounded-xl shadow-sm border border-slate-100 flex flex-col items-center justify-center cursor-pointer hover:shadow-md transition-all hover:-translate-y-1">
+                        <i class="fa-solid fa-folder text-amber-500 text-4xl mb-3"></i><span class="font-bold text-slate-800 text-sm text-center">Vernet Behringer</span>
+                    </div>
+                </div>
             </div>
 
             <!-- VUE FICHES INTERVENTION -->
@@ -321,10 +351,7 @@
         <a href="#" data-view="curatif" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-triangle-exclamation text-lg mb-1"></i><span class="text-[9px] font-medium">Curatif</span></a>
         <a href="#" data-view="parc" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-industry text-lg mb-1"></i><span class="text-[9px] font-medium">Parc</span></a>
         <a href="#" data-view="hypertherm" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-fire-flame-curved text-lg mb-1 text-amber-500"></i><span class="text-[9px] font-medium">HT</span></a>
-        
-        <!-- LA LIGNE RESTAURÉE MOBILE ! -->
         <a href="#" data-view="docs" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-book-open text-lg mb-1"></i><span class="text-[9px] font-medium">Doc.</span></a>
-        
         <a href="#" data-view="fiches" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-clipboard-list text-lg mb-1"></i><span class="text-[9px] font-medium">Fiches</span></a>
         <a href="#" data-view="historique" class="nav-link flex-shrink-0 flex flex-col items-center justify-center text-slate-400 w-20"><i class="fa-solid fa-box-archive text-lg mb-1"></i><span class="text-[9px] font-medium">Archives</span></a>
     </nav>
@@ -355,6 +382,6 @@
         </div>
     </div>
 
-    <script type="module" src="app.js?v=41"></script>
+    <script type="module" src="app.js?v=42"></script>
 </body>
 </html>
