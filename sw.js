@@ -1,6 +1,6 @@
 // GMAO A2CIM - Service Worker
 // Incrémenter VERSION à chaque déploiement pour renouveler les caches.
-const VERSION = 'v39';
+const VERSION = 'v40';
 const SHELL_CACHE = `gmao-shell-${VERSION}`;
 const CDN_CACHE = `gmao-cdn-${VERSION}`;
 
@@ -63,7 +63,7 @@ async function networkFirst(request, isNavigation) {
   const cache = await caches.open(SHELL_CACHE);
   try {
     const res = await fetch(request);
-    if (res && res.ok) cache.put(request, res.clone());
+    if (res && res.status === 200) cache.put(request, res.clone()).catch(() => {});
     return res;
   } catch (err) {
     const cached = await cache.match(request, { ignoreSearch: true });
@@ -94,7 +94,7 @@ self.addEventListener('fetch', (event) => {
   if (BYPASS_HOSTS.has(url.hostname)) return;
 
   if (url.origin === self.location.origin) {
-    event.respondWith(networkFirst(req, req.mode === 'navigate'));
+    event.respondWith(networkFirst(req, req.mode === 'navigate' && !/\.pdf$/i.test(url.pathname)));
   } else if (CDN_HOSTS.includes(url.hostname)) {
     event.respondWith(staleWhileRevalidate(req));
   }

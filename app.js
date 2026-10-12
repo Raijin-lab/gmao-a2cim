@@ -720,6 +720,7 @@ function showView(target) {
   appViews.forEach((v) => v.classList.add("hidden"));
   $(`view-${target}`).classList.remove("hidden");
   if (target === "planning" && fullCalendarInstance) setTimeout(() => fullCalendarInstance.render(), 100);
+  if (target === "docs") loadDocs();
   if (addBtn) {
     if (viewsWithAddBtn.includes(target)) { addBtn.classList.remove("opacity-0", "pointer-events-none"); addBtn.classList.add("opacity-100"); }
     else { addBtn.classList.remove("opacity-100"); addBtn.classList.add("opacity-0", "pointer-events-none"); }
@@ -1106,6 +1107,102 @@ function genererFicheDossier(id, mode) {
 }
 
 // ---------------------------------------------------------------------
+// BASE DOCUMENTAIRE (PDF hébergés dans le dossier docs/ du dépôt GitHub)
+// Structure : docs/<constructeur>/<fichier>.pdf. La liste vient de docs/index.json
+// (généré automatiquement par GitHub Actions) ou, à défaut, de l'API GitHub.
+// ---------------------------------------------------------------------
+const DOC_ROOT = "docs";
+// Laisser vide : détection automatique pour https://<compte>.github.io/<depot>/
+const DOC_GITHUB = { owner: "", repo: "", branch: "" };
+// <PURE2>
+const DOC_HIDDEN = new Set(["beckhoff", "cybelec", "soprolec", "fiessler", "euroboor"]);   // dossiers non affichés
+const DOC_LABELS = { baisheng: "Baisheng Laser", vernet: "Vernet Behringer" };
+const DOC_ORDER = ["hypertherm", "messer", "gullco", "sturmer", "behringer", "picot", "dimeco", "cesurbend", "baisheng", "ermaksan", "vernet"];
+const docLabel = (n) => DOC_LABELS[n.toLowerCase()] || n.charAt(0).toUpperCase() + n.slice(1);
+const docHref = (path) => DOC_ROOT + "/" + path.split("/").map(encodeURIComponent).join("/");
+const docSize = (b) => (!b ? "" : b >= 1048576 ? (b / 1048576).toFixed(1).replace(".", ",") + " Mo" : Math.max(1, Math.round(b / 1024)) + " Ko");
+const docCmp = (x, y) => x.localeCompare(y, "fr", { numeric: true, sensitivity: "base" });
+
+function docListing(files, pathArr, search) {
+  const q = (search || "").trim().toLowerCase();
+  const visible = files.filter((f) => !DOC_HIDDEN.has(f.path.split("/")[0].toLowerCase()));
+  if (q) {
+    return { flat: true, folders: [], files: visible.filter((f) => f.path.toLowerCase().includes(q)).map((f) => ({ ...f, name: f.path.split("/").pop() })).sort((x, y) => docCmp(x.path, y.path)) };
+  }
+  const prefix = pathArr.length ? pathArr.join("/") + "/" : "";
+  const folders = new Map(); const out = [];
+  visible.forEach((f) => {
+    if (!f.path.startsWith(prefix)) return;
+    const rest = f.path.slice(prefix.length), i = rest.indexOf("/");
+    if (i === -1) out.push({ ...f, name: rest });
+    else { const n = rest.slice(0, i); folders.set(n, (folders.get(n) || 0) + 1); }
+  });
+  const rank = (n) => { const i = DOC_ORDER.indexOf(n.toLowerCase()); return i === -1 ? 999 : i; };
+  return {
+    flat: false,
+    folders: [...folders.entries()].map(([name, count]) => ({ name, count })).sort((x, y) => (pathArr.length ? 0 : rank(x.name) - rank(y.name)) || docCmp(x.name, y.name)),
+    files: out.sort((x, y) => docCmp(x.name, y.name))
+  };
+}
+// </PURE2>
+
+let docFiles = null, docError = "", docPath = [], docSearch = "";
+
+async function fetchDocIndex() {
+  const clean = (arr) => arr
+    .map((f) => (typeof f === "string" ? { path: f } : f))
+    .filter((f) => f.path && f.path !== "index.json" && !f.path.split("/").some((s) => s.startsWith(".")));
+  try {
+    const r = await fetch(`${DOC_ROOT}/index.json`, { cache: "no-store" });
+    if (r.ok) { const j = await r.json(); return clean(Array.isArray(j) ? j : j.files || []); }
+  } catch (_) { /* on tente le secours */ }
+  // Secours : liste directe via l'API GitHub (dépôt public)
+  const host = location.hostname;
+  const owner = DOC_GITHUB.owner || (host.endsWith(".github.io") ? host.split(".")[0] : "");
+  const repo = DOC_GITHUB.repo || location.pathname.split("/")[1] || "";
+  if (!owner || !repo) throw new Error("Liste des documents introuvable (docs/index.json absent).");
+  for (const branch of DOC_GITHUB.branch ? [DOC_GITHUB.branch] : ["main", "master"]) {
+    const r = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`);
+    if (!r.ok) continue;
+    const j = await r.json();
+    return clean(j.tree.filter((t) => t.type === "blob" && t.path.startsWith(DOC_ROOT + "/")).map((t) => ({ path: t.path.slice(DOC_ROOT.length + 1), size: t.size })));
+  }
+  throw new Error("Impossible de lister les documents (connexion requise ou dépôt privé).");
+}
+
+async function loadDocs() {
+  if (docFiles) return renderDocs();
+  docError = ""; renderDocs();
+  try { docFiles = await fetchDocIndex(); }
+  catch (err) { console.error(err); docError = err.message || "Erreur de chargement."; }
+  renderDocs();
+}
+
+function renderDocs() {
+  const c = $("docs-container"), bc = $("docs-breadcrumb"); if (!c) return;
+  if (docError) { c.innerHTML = `<div class="bg-amber-50 border border-amber-200 text-amber-900 p-4 rounded-2xl text-sm font-medium"><i class="fa-solid fa-triangle-exclamation mr-2"></i>${esc(docError)}</div>`; if (bc) bc.innerHTML = ""; return; }
+  if (!docFiles) { c.innerHTML = '<p class="text-slate-400 text-sm italic text-center py-8"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Chargement des documents…</p>'; return; }
+
+  const { flat, folders, files } = docListing(docFiles, docPath, docSearch);
+  if (bc) {
+    const crumbs = ['<button data-act="doc-nav" data-path="" class="font-bold text-brand-600 hover:underline">Base Doc.</button>'];
+    docPath.forEach((seg, i) => crumbs.push(`<span class="text-slate-300">/</span><button data-act="doc-nav" data-path="${esc(docPath.slice(0, i + 1).join("/"))}" class="font-bold text-brand-600 hover:underline">${esc(i === 0 ? docLabel(seg) : seg)}</button>`));
+    bc.innerHTML = flat ? `<span class="text-slate-500">${files.length} résultat(s)</span>` : crumbs.join(" ");
+  }
+  const folderHTML = folders.length ? `<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">${folders.map((f) => `<button data-act="doc-folder" data-name="${esc(f.name)}" class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 flex flex-col items-center gap-2 hover:shadow-md transition-shadow"><i class="fa-solid fa-folder-open text-3xl text-amber-500"></i><span class="font-bold text-slate-800 text-sm text-center">${esc(docPath.length ? f.name : docLabel(f.name))}</span><span class="text-xs text-slate-400">${f.count} document(s)</span></button>`).join("")}</div>` : "";
+  const fileHTML = files.length ? `<div class="space-y-2">${files.map((f) => {
+    const isPdf = /\.pdf$/i.test(f.name);
+    const where = flat ? `<span class="block text-[11px] text-slate-400 truncate">${esc(f.path.split("/").slice(0, -1).map((s, i) => (i === 0 ? docLabel(s) : s)).join(" / "))}</span>` : "";
+    return `<a href="${esc(docHref(f.path))}" target="_blank" rel="noopener" class="bg-white rounded-xl shadow-sm border border-slate-100 p-4 flex items-center gap-3 hover:shadow-md hover:border-brand-100 transition"><i class="fa-solid ${isPdf ? "fa-file-pdf text-red-500" : "fa-file text-slate-400"} text-xl shrink-0"></i><span class="flex-1 min-w-0"><span class="block font-medium text-slate-800 truncate">${esc(f.name.replace(/\.[^.]+$/, "").trim())}</span>${where}</span><span class="text-xs text-slate-400 shrink-0">${esc(docSize(f.size))}</span></a>`;
+  }).join("")}</div>` : "";
+  const empty = !folders.length && !files.length ? `<p class="text-slate-400 text-sm italic text-center py-8">${flat ? "Aucun document ne correspond à la recherche." : "Aucun document dans ce dossier."}</p>` : "";
+  const hint = isAdmin && !flat && !docPath.length ? '<p class="text-xs text-slate-400 mt-6">Pour ajouter un document : déposez le PDF dans <b>docs/&lt;constructeur&gt;/</b> sur GitHub. Il apparaît ici après quelques minutes (bouton « Actualiser »).</p>' : "";
+  c.innerHTML = folderHTML + fileHTML + empty + hint;
+}
+
+if ($("docsSearch")) $("docsSearch").addEventListener("input", (e) => { docSearch = e.target.value; renderDocs(); });
+
+// ---------------------------------------------------------------------
 // ÉCOUTEURS DÉLÉGUÉS (remplacent tous les onclick/onsubmit inline dynamiques)
 // ---------------------------------------------------------------------
 document.addEventListener("click", (e) => {
@@ -1132,6 +1229,9 @@ document.addEventListener("click", (e) => {
     case "passage-del": return supprimerPassage(el.dataset.did, id);
     case "dossier-fiche": return genererFicheDossier(id, el.dataset.mode);
     case "dossier-delete": return supprimerDossier(id);
+    case "doc-folder": docPath = [...docPath, el.dataset.name]; return renderDocs();
+    case "doc-nav": docPath = el.dataset.path ? el.dataset.path.split("/") : []; docSearch = ""; if ($("docsSearch")) $("docsSearch").value = ""; return renderDocs();
+    case "doc-refresh": docFiles = null; return loadDocs();
     case "del-piece":
       tempKitPieces = tempKitPieces.filter((p) => !(p.ref === ref && p.nom === nom));
       return afficherPiecesKitTemp();

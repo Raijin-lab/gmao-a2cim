@@ -1,0 +1,46 @@
+# À placer dans le dépôt GitHub sous : .github/workflows/docs-index.yml
+# Rôle : à chaque ajout/suppression/renommage de fichier dans docs/, régénère docs/index.json
+# (la liste lue par l'onglet « Base Doc. » de l'application).
+name: Index documentation
+
+on:
+  push:
+    paths:
+      - 'docs/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Générer docs/index.json
+        run: |
+          python3 - <<'PY'
+          import os, json
+          files = []
+          for root, _, names in os.walk('docs'):
+              for n in names:
+                  if n.startswith('.') or n == 'index.json':
+                      continue
+                  p = os.path.join(root, n)
+                  files.append({
+                      'path': os.path.relpath(p, 'docs').replace(os.sep, '/'),
+                      'size': os.path.getsize(p)
+                  })
+          files.sort(key=lambda f: f['path'].lower())
+          with open('docs/index.json', 'w', encoding='utf-8') as fh:
+              json.dump({'files': files}, fh, ensure_ascii=False, indent=1)
+          print(len(files), 'fichier(s) indexé(s)')
+          PY
+
+      - name: Enregistrer si la liste a changé
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add docs/index.json
+          git diff --staged --quiet || (git commit -m "Mise à jour de l'index des documents" && git push)
