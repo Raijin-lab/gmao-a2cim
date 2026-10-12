@@ -4,7 +4,7 @@
   "short_name": "GMAO A2CIM",
   "description": "Gestion de maintenance A2CIM : préventif, curatif, parc clients et fiches SAV",
   "lang": "fr",
-  "start_url": "./index.html",
+  "start_url": ".",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
