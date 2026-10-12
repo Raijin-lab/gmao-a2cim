@@ -4,7 +4,7 @@
 // =====================================================================
 import {
   collection, addDoc, setDoc, getDoc, deleteDoc, updateDoc, doc, onSnapshot, query, orderBy,
-  serverTimestamp, arrayUnion, arrayRemove, writeBatch, limit
+  serverTimestamp, arrayUnion, arrayRemove, writeBatch, limit, where, getDocs
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { db, authReady, logout } from "./firebase-init.js";
 
@@ -173,7 +173,7 @@ onSnapshot(query(collection(db, "clients"), orderBy("nom", "asc")), (snapshot) =
   clientsCache = []; parcClientsDB = {};
   snapshot.forEach((d) => {
     const x = d.data();
-    const entry = { id: d.id, nom: x.nom, machines: Array.isArray(x.machines) ? x.machines : [] };
+    const entry = { id: d.id, nom: x.nom, machines: Array.isArray(x.machines) ? x.machines : [], machinesInfo: Array.isArray(x.machinesInfo) ? x.machinesInfo : [] };
     clientsCache.push(entry);
     parcClientsDB[x.nom] = { id: d.id, machines: entry.machines };
   });
@@ -197,12 +197,14 @@ function renderParc() {
       ? '<p class="text-xs text-slate-400 italic mb-2">Aucune machine.</p>'
       : cl.machines.map((m) => {
           const kit = kitsDB[kitKey(cl.nom, m)];
+          const info = cl.machinesInfo.find((i) => i.label === m);
+          const serieHTML = info && info.serie ? `<span class="block text-[10px] text-slate-400 font-normal">S/N ${esc(info.serie)}</span>` : "";
           const iconColor = kit && kit.pieces.length > 0 ? "text-brand-500" : "text-slate-300";
-          const delBtn = isAdmin ? `<button data-act="del-machine" data-id="${esc(cl.id)}" data-machine="${esc(m)}" class="text-slate-300 hover:text-red-500 px-1"><i class="fa-solid fa-xmark"></i></button>` : "";
-          return `<div class="flex items-center justify-between bg-slate-50 px-3 py-2 rounded-lg mb-2 border border-slate-100"><span class="text-sm text-slate-700 font-medium truncate flex-1"><i class="fa-solid fa-microchip text-slate-400 mr-2"></i>${esc(m)}</span><div class="flex items-center space-x-2 shrink-0"><button data-act="kit" data-client="${esc(cl.nom)}" data-machine="${esc(m)}" class="px-2 py-1 bg-white border border-slate-200 rounded hover:bg-slate-100"><i class="fa-solid fa-boxes-stacked ${iconColor}"></i></button>${delBtn}</div></div>`;
+          const delBtn = isAdmin ? `<button data-act="edit-machine" data-id="${esc(cl.id)}" data-machine="${esc(m)}" class="text-slate-300 hover:text-brand-500 px-1"><i class="fa-solid fa-pen"></i></button><button data-act="del-machine" data-id="${esc(cl.id)}" data-machine="${esc(m)}" class="text-slate-300 hover:text-red-500 px-1"><i class="fa-solid fa-xmark"></i></button>` : "";
+          return `<div class="flex items-center justify-between bg-slate-50 px-3 py-2 rounded-lg mb-2 border border-slate-100"><span class="text-sm text-slate-700 font-medium truncate flex-1"><i class="fa-solid fa-microchip text-slate-400 mr-2"></i>${esc(m)}${serieHTML}</span><div class="flex items-center space-x-2 shrink-0"><button data-act="kit" data-client="${esc(cl.nom)}" data-machine="${esc(m)}" class="px-2 py-1 bg-white border border-slate-200 rounded hover:bg-slate-100"><i class="fa-solid fa-boxes-stacked ${iconColor}"></i></button>${delBtn}</div></div>`;
         }).join("");
     const delClient = isAdmin ? `<button data-act="del-client" data-id="${esc(cl.id)}" class="absolute top-4 right-4 text-slate-300 hover:text-red-500"><i class="fa-solid fa-trash-can"></i></button>` : "";
-    const addForm = isAdmin ? `<form data-machine-form="${esc(cl.id)}" class="flex gap-2 mt-auto"><input type="text" name="machine" placeholder="Nom machine..." required class="flex-1 px-3 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-brand-500"><button type="submit" class="bg-slate-800 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-slate-700"><i class="fa-solid fa-plus"></i></button></form>` : "";
+    const addForm = isAdmin ? `<form data-machine-form="${esc(cl.id)}" class="mt-auto space-y-2 border-t border-slate-100 pt-3"><input type="text" name="type" placeholder="Type (ex : HPR 260)" required class="w-full px-3 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-brand-500"><div class="flex gap-2"><input type="text" name="repere" placeholder="Repère (ex : Atelier A)" class="flex-1 min-w-0 px-3 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-brand-500"><input type="text" name="serie" placeholder="N° série" class="w-1/3 min-w-0 px-3 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-brand-500"></div><button type="submit" class="w-full bg-slate-800 text-white py-1.5 rounded-lg text-sm hover:bg-slate-700"><i class="fa-solid fa-plus mr-1"></i> Ajouter la machine</button></form>` : ""; 
     return `<div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col relative h-full">${delClient}<div class="p-5 border-b border-slate-100 bg-brand-50"><h3 class="text-lg font-bold text-brand-900"><i class="fa-solid fa-building mr-2 text-brand-500"></i>${esc(cl.nom)}</h3></div><div class="p-5 flex-1 flex flex-col"><div class="mb-4 max-h-[200px] overflow-y-auto custom-scroll pr-2">${machinesHTML}</div>${addForm}</div></div>`;
   }).join("");
 }
@@ -228,8 +230,85 @@ async function safe(fn, okMsg) {
   try { await fn(); if (okMsg) toast(okMsg, "success"); }
   catch (err) { console.error(err); toast("Action refusée ou échouée : " + (err.code || err.message), "error"); }
 }
-const ajouterMachineParc = (docId, nom) => safe(() => updateDoc(doc(db, "clients", docId), { machines: arrayUnion(nom) }));
-const supprimerMachineParc = (docId, nom) => confirm(`Supprimer la machine "${nom}" ?`) && safe(() => updateDoc(doc(db, "clients", docId), { machines: arrayRemove(nom) }));
+// Nom affiché d'une machine = Type · Repère (ou N° de série si pas de repère). Unique par client.
+function machineLabel({ type, repere, serie }) {
+  return [type, repere || (serie ? `S/N ${serie}` : "")].filter(Boolean).join(" · ");
+}
+const DUP_MSG = (label) => `« ${label} » existe déjà chez ce client. Ajoutez un repère (ex : Atelier A, Ligne 2) ou un N° de série pour les distinguer.`;
+
+async function ajouterMachineParc(docId, data) {
+  const cl = clientsCache.find((c) => c.id === docId); if (!cl) return false;
+  const info = { type: data.type.trim(), repere: data.repere.trim(), serie: data.serie.trim() };
+  if (!info.type) { toast("Le type de machine est obligatoire.", "error"); return false; }
+  info.label = machineLabel(info);
+  if (cl.machines.some((m) => m.toLowerCase() === info.label.toLowerCase())) { toast(DUP_MSG(info.label), "error"); return false; }
+  try {
+    await updateDoc(doc(db, "clients", docId), { machines: arrayUnion(info.label), machinesInfo: arrayUnion(info) });
+    toast("Machine ajoutée.", "success");
+    return true;
+  } catch (err) { console.error(err); toast("Action refusée ou échouée : " + (err.code || err.message), "error"); return false; }
+}
+
+const supprimerMachineParc = (docId, nom) => {
+  if (!confirm(`Supprimer la machine "${nom}" ?`)) return;
+  const cl = clientsCache.find((c) => c.id === docId);
+  const info = cl && cl.machinesInfo.find((i) => i.label === nom);
+  const upd = { machines: arrayRemove(nom) };
+  if (info) upd.machinesInfo = arrayRemove(info);
+  return safe(() => updateDoc(doc(db, "clients", docId), upd));
+};
+
+// Renommer / compléter une machine : met à jour aussi nomenclatures, interventions et suivi Hypertherm.
+// L'historique des fiches déjà imprimées n'est volontairement pas modifié.
+async function renameMachine(docId, oldLabel, data) {
+  const cl = clientsCache.find((c) => c.id === docId); if (!cl) return false;
+  if (!navigator.onLine) { toast("Connexion requise pour modifier une machine.", "error"); return false; }
+  const info = { type: data.type.trim(), repere: data.repere.trim(), serie: data.serie.trim() };
+  if (!info.type) { toast("Le type de machine est obligatoire.", "error"); return false; }
+  info.label = machineLabel(info);
+  const changed = info.label !== oldLabel;
+  if (changed && cl.machines.some((m) => m !== oldLabel && m.toLowerCase() === info.label.toLowerCase())) { toast(DUP_MSG(info.label), "error"); return false; }
+  try {
+    const ops = [{
+      ref: doc(db, "clients", docId),
+      data: {
+        machines: cl.machines.map((m) => (m === oldLabel ? info.label : m)),
+        machinesInfo: cl.machinesInfo.filter((i) => i.label !== oldLabel).concat(info)
+      }
+    }];
+    if (changed) {
+      for (const col of ["kits", "interventions", "hypertherm"]) {
+        const snap = await getDocs(query(collection(db, col), where("client", "==", cl.nom), where("machine", "==", oldLabel)));
+        snap.forEach((d) => ops.push({ ref: d.ref, data: { machine: info.label } }));
+      }
+    }
+    for (let i = 0; i < ops.length; i += 400) {
+      const batch = writeBatch(db);
+      ops.slice(i, i + 400).forEach((o) => batch.update(o.ref, o.data));
+      await batch.commit();
+    }
+    toast(`Machine mise à jour (${ops.length - 1} élément(s) lié(s)).`, "success");
+    return true;
+  } catch (err) { console.error(err); toast("Modification échouée : " + (err.code || err.message), "error"); return false; }
+}
+
+function openMachineEditor(docId, oldLabel) {
+  const cl = clientsCache.find((c) => c.id === docId); if (!cl) return;
+  const info = cl.machinesInfo.find((i) => i.label === oldLabel) || { type: oldLabel, repere: "", serie: "" };
+  const inputCls = "w-full px-3 py-2 border border-slate-300 rounded-lg text-sm";
+  const ov = document.createElement("div");
+  ov.className = "fixed inset-0 bg-slate-900 bg-opacity-60 flex items-center justify-center z-[80] px-4";
+  ov.innerHTML = `<form class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-3"><h3 class="text-lg font-bold text-slate-800">Modifier la machine</h3><p class="text-xs text-slate-500">Les interventions, nomenclatures et le suivi Hypertherm de cette machine sont mis à jour automatiquement. Les fiches déjà imprimées ne changent pas.</p><input name="type" value="${esc(info.type)}" placeholder="Type (ex : HPR 260)" required class="${inputCls}"><input name="repere" value="${esc(info.repere)}" placeholder="Repère (ex : Atelier A)" class="${inputCls}"><input name="serie" value="${esc(info.serie)}" placeholder="N° de série" class="${inputCls}"><div class="flex gap-2 pt-2"><button type="button" data-cancel class="flex-1 py-2 bg-slate-100 rounded-xl text-sm font-bold">Annuler</button><button type="submit" class="flex-1 py-2 bg-brand-500 text-white rounded-xl text-sm font-bold">Enregistrer</button></div></form>`;
+  document.body.appendChild(ov);
+  ov.querySelector("[data-cancel]").addEventListener("click", () => ov.remove());
+  ov.querySelector("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const btn = e.target.querySelector('button[type="submit"]'); btn.disabled = true;
+    const ok = await renameMachine(docId, oldLabel, { type: fd.get("type"), repere: fd.get("repere"), serie: fd.get("serie") });
+    if (ok) ov.remove(); else btn.disabled = false;
+  });
+}
 const supprimerClientParc = (docId) => confirm("Attention : supprimer ce client ?") && safe(() => deleteDoc(doc(db, "clients", docId)));
 
 if ($("formAddClient")) {
@@ -357,7 +436,7 @@ function initCalendar() {
     dayMaxEvents: 2, moreLinkClick: "listDay",
     headerToolbar: { left: "prev,next today", center: "title", right: mobile ? "" : "dayGridMonth,listDay" },
     buttonText: { today: "Aujourd'hui", month: "Mois", list: "Jour" }, height: "100%", events: [],
-    eventClick: (info) => ouvrirActionModal(info.event),
+    eventClick: (info) => (info.event.extendedProps && info.event.extendedProps.multiJours ? openDossier(info.event.id) : ouvrirActionModal(info.event)),
     dateClick: (info) => fullCalendarInstance.changeView("listDay", info.dateStr)
   });
   fullCalendarInstance.render();
@@ -372,13 +451,13 @@ function updateCalendarEvents() {
     if (currentClientFilter !== "ALL" && data.client !== currentClientFilter) return;
     if (currentTypeFilter !== "ALL" && data.type !== currentTypeFilter) return;
     let color = statusConfig[data.statut]?.color || "#3b82f6";
-    if (data.statut !== "Terminé" && data.date < todayStr) color = "#ef4444";
+    if (data.statut !== "Terminé" && data.date < todayStr && !data.multiJours) color = "#ef4444";
     else if (data.statut === "Planifié" && data.type === "Curatif") color = "#ef4444";
     if (data.type === "Préventif") preventifDates.add(data.date);
     fullCalendarInstance.addEvent({
-      id: data.id, title: `${data.type === "Curatif" ? "🚨" : "🔧"} ${data.client} - ${data.machine}`, start: data.date,
+      id: data.id, title: `${data.multiJours ? "📂" : data.type === "Curatif" ? "🚨" : "🔧"} ${data.client} - ${data.machine}`, start: data.date,
       backgroundColor: color, borderColor: color,
-      extendedProps: { client: data.client, statut: data.statut, frequence: data.frequence || "Ponctuel", type: data.type, machine: data.machine, technicien: data.technicien }
+      extendedProps: { client: data.client, statut: data.statut, frequence: data.frequence || "Ponctuel", type: data.type, machine: data.machine, technicien: data.technicien, multiJours: !!data.multiJours }
     });
   });
   preventifDates.forEach((d) => fullCalendarInstance.addEvent({ start: d, display: "background", backgroundColor: "#f1f5f9" }));
@@ -476,7 +555,7 @@ onSnapshot(query(collection(db, "interventions"), orderBy("date", "asc")), (snap
     if (data.statut === "Archivé") return;
     allInterventions.push(data);
 
-    const isRetard = data.date < todayStr;
+    const isRetard = data.date < todayStr && !data.multiJours;
     if (data.statut === "Terminé") termine++;
     else {
       active++;
@@ -487,9 +566,9 @@ onSnapshot(query(collection(db, "interventions"), orderBy("date", "asc")), (snap
     let config = statusConfig[data.statut] || statusConfig["Planifié"];
     if (isRetard && data.statut === "Planifié") config = statusConfig["En retard"];
     const lateNow = isRetard && data.statut !== "Terminé";
-    const groupKey = `${data.client}_${data.date}_${data.type}_${lateNow ? "Retard" : data.statut}`;
+    const groupKey = data.multiJours ? `dossier_${data.id}` : `${data.client}_${data.date}_${data.type}_${lateNow ? "Retard" : data.statut}`;
     if (!groupedInterventionsGlobal[groupKey]) {
-      groupedInterventionsGlobal[groupKey] = { client: data.client, dateAffichee, type: data.type, statut: isRetard && data.statut === "Planifié" ? "En retard" : data.statut, isRetard, config, machines: [] };
+      groupedInterventionsGlobal[groupKey] = { client: data.client, dateAffichee, type: data.type, statut: isRetard && data.statut === "Planifié" ? "En retard" : data.statut, isRetard, config, machines: [], multi: !!data.multiJours, dossierId: data.id };
     }
     groupedInterventionsGlobal[groupKey].machines.push(data);
   });
@@ -497,7 +576,7 @@ onSnapshot(query(collection(db, "interventions"), orderBy("date", "asc")), (snap
   Object.keys(groupedInterventionsGlobal).forEach((key) => {
     const g = groupedInterventionsGlobal[key];
     const warn = g.isRetard && g.statut !== "Terminé" ? '<span class="text-red-500 font-bold text-xs"><i class="fa-solid fa-triangle-exclamation"></i></span>' : "";
-    const card = `<div data-act="group" data-key="${esc(key)}" class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex items-center justify-between hover:shadow-md transition-shadow cursor-pointer"><div class="w-2 self-stretch border-l-4" style="background-color:${g.config.bg};border-color:${g.config.border};"></div><div class="p-4 flex-1 flex items-center justify-between"><div><div class="flex items-center gap-2 mb-1"><h3 class="font-bold text-slate-800 text-base uppercase">${esc(g.client)}</h3>${warn}</div><p class="text-sm text-slate-600 font-medium"><i class="fa-solid fa-microchip mr-1 text-slate-400"></i> ${g.machines.length} machine(s) ${g.statut === "Terminé" ? "achevée(s)" : "prévue(s)"}</p><p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-calendar-day mr-1"></i> ${esc(g.dateAffichee)} &nbsp;|&nbsp; <i class="fa-solid fa-wrench mr-1"></i> ${esc(g.type)}</p></div><div class="px-3 py-1.5 rounded-lg text-xs font-bold uppercase" style="background-color:${g.config.bg};color:${g.config.text};border-color:${g.config.border};border-width:1px;">${esc(g.statut)}</div></div></div>`;
+    const card = `<div data-act="${g.multi ? "dossier" : "group"}" data-key="${esc(key)}" data-id="${esc(g.dossierId || "")}" class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex items-center justify-between hover:shadow-md transition-shadow cursor-pointer"><div class="w-2 self-stretch border-l-4" style="background-color:${g.config.bg};border-color:${g.config.border};"></div><div class="p-4 flex-1 flex items-center justify-between"><div><div class="flex items-center gap-2 mb-1"><h3 class="font-bold text-slate-800 text-base uppercase">${esc(g.client)}</h3>${warn}</div><p class="text-sm text-slate-600 font-medium"><i class="fa-solid fa-microchip mr-1 text-slate-400"></i> ${g.multi ? "Dossier multi-jours · " + esc(g.machines[0].machine) : g.machines.length + " machine(s) " + (g.statut === "Terminé" ? "achevée(s)" : "prévue(s)")}</p><p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-calendar-day mr-1"></i> ${esc(g.dateAffichee)} &nbsp;|&nbsp; <i class="fa-solid fa-wrench mr-1"></i> ${esc(g.type)}</p></div><div class="px-3 py-1.5 rounded-lg text-xs font-bold uppercase" style="background-color:${g.config.bg};color:${g.config.text};border-color:${g.config.border};border-width:1px;">${esc(g.statut)}</div></div></div>`;
     if (g.statut === "Terminé") completedHTML += card;
     else if (g.type === "Curatif" || g.isRetard || g.statut === "En retard") urgentHTML += card;
     else upcomingHTML += card;
@@ -545,7 +624,7 @@ function redigerFicheGlobaleTerminee(groupKey) {
   window.__pendingArchive = g.machines.map((m) => m.id);
   setEditMode(null);
 
-  $("input_fisav").value = ""; $("input_reference").value = "";
+  $("input_fisav").value = ""; $("input_reference").value = ""; $("input_deplacements").value = "";
   $("input_client").value = g.client;
   $("input_machine").value = `${g.machines.length} machine(s) (Voir détail)`;
   $("input_date").value = localDateStr();
@@ -581,6 +660,14 @@ if ($("addInterventionBtn")) $("addInterventionBtn").addEventListener("click", o
 if ($("closeModalBtn")) $("closeModalBtn").addEventListener("click", closeAddModal);
 if ($("cancelModalBtn")) $("cancelModalBtn").addEventListener("click", closeAddModal);
 
+function toggleMultiRow() {
+  const row = $("multiJoursRow"); if (!row) return;
+  const show = $("formType").value === "Curatif";
+  row.classList.toggle("hidden", !show);
+  if (!show) { $("formMultiJours").checked = false; $("formPanne").value = ""; }
+}
+if ($("formType")) $("formType").addEventListener("change", toggleMultiRow);
+
 if ($("addInterventionForm")) {
   $("addInterventionForm").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -595,7 +682,12 @@ if ($("addInterventionForm")) {
     btn.innerHTML = SPINNER + "Création..."; btn.disabled = true;
     try {
       const base = { type, technicien, statut: "Planifié", frequence };
-      if (machine === "TOUTES_LES_MACHINES") {
+      const multi = type === "Curatif" && $("formMultiJours") && $("formMultiJours").checked;
+      if (multi) {
+        if (machine === "TOUTES_LES_MACHINES") { toast("Un dossier multi-jours concerne une seule machine.", "error"); return; }
+        const created = await createIntervention({ client, machine, date, type, technicien, statut: "En cours", frequence: "Ponctuel", multiJours: true, panne: ($("formPanne").value || "").trim() });
+        alert(created ? "📂 Dossier multi-jours ouvert. Cliquez dessus dans « Urgences » pour ajouter les passages." : "⚠️ Une intervention identique existe déjà (doublon évité).");
+      } else if (machine === "TOUTES_LES_MACHINES") {
         const batch = writeBatch(db); let ajouts = 0, doublons = 0;
         for (const m of parcClientsDB[client].machines) {
           const id = recurrenceId(client, m, date, type);
@@ -609,7 +701,7 @@ if ($("addInterventionForm")) {
         const created = await createIntervention({ client, machine, date, ...base });
         if (!created) alert("⚠️ Cette intervention existe déjà (doublon évité).");
       }
-      e.target.reset(); closeAddModal();
+      e.target.reset(); closeAddModal(); toggleMultiRow();
     } catch (err) { console.error(err); toast("Erreur lors de la création : " + (err.code || err.message), "error"); }
     finally { btn.innerHTML = orig; btn.disabled = false; }
   });
@@ -720,6 +812,8 @@ window.prepareAndPrint = async function () {
     techNames.push(name); detailTechniciens.push({ nom: name, quantite: qty, unite: unit }); totalQty += qty; currentUnit = unit;
     rows += `<tr><td style="padding-top:10px;">FHTEC-EM2</td><td style="padding-top:10px;">Heure Technicien ${esc(name)}</td><td style="padding-top:10px;text-align:center;">${qty} ${unit === "Heure(s)" ? "H" : "J"}</td><td style="padding-top:10px;text-align:right;">0,00</td><td style="padding-top:10px;text-align:right;">0,00</td></tr>`;
   });
+  const nbDepl = parseInt($("input_deplacements").value, 10) || 0;
+  if (nbDepl > 0) rows += `<tr><td style="padding-top:10px;"></td><td style="padding-top:10px;">Nombre de déplacements</td><td style="padding-top:10px;text-align:center;">${nbDepl}</td><td></td><td></td></tr>`;
   rows += '<tr><td style="height:30px;"></td><td></td><td></td><td></td><td></td></tr>';
   $("p_lignes_prestations").innerHTML = rows;
   const allTechs = techNames.join(", ");
@@ -731,7 +825,7 @@ window.prepareAndPrint = async function () {
     numero_fisav: fisavRaw, reference_intervention: reference, client: clientRaw, machine: machineRaw,
     date_intervention: dateRaw, date_tirage: `${dateTirage} ${heureTirage}`,
     forfait_ref: refForfait, forfait_nom: nomForfait, forfait_diag: diagForfait, diagnostic: diagForfait,
-    travaux_realises: travaux, techniciens_intervenants: detailTechniciens, total_temps: total
+    travaux_realises: travaux, techniciens_intervenants: detailTechniciens, total_temps: total, nb_deplacements: nbDepl
   };
   try {
     if (currentFicheId) {
@@ -814,6 +908,7 @@ function openFiche(id) {
   $("input_forfait_nom").value = h.forfait_nom || (preventif ? "SAV-Préventif" : "SAV-Depannage");
   $("input_forfait_diag").value = diag;
   $("input_travaux").value = h.travaux_realises || "";
+  $("input_deplacements").value = h.nb_deplacements || "";
   $("fiche-tech-list").innerHTML = (h.techniciens_intervenants || []).map((t) => techRowHTML(t.nom, t.quantite, t.unite)).join("");
   window.__pendingArchive = [];
   setEditMode(id);
@@ -823,12 +918,192 @@ function openFiche(id) {
 function newFiche() {
   if (!confirm("Vider le formulaire et commencer une nouvelle fiche ?")) return;
   setEditMode(null); window.__pendingArchive = [];
-  ["input_fisav", "input_reference", "input_client", "input_machine", "input_travaux", "input_forfait_diag"].forEach((id) => { $(id).value = ""; });
+  ["input_fisav", "input_reference", "input_client", "input_machine", "input_travaux", "input_forfait_diag", "input_deplacements"].forEach((id) => { $(id).value = ""; });
   $("input_forfait_ref").value = "DEPAN"; $("input_forfait_nom").value = "SAV-Depannage";
   $("input_date").value = localDateStr(); $("fiche-tech-list").innerHTML = "";
 }
 
 if ($("historiqueSearch")) $("historiqueSearch").addEventListener("input", (e) => { historiqueFilter = e.target.value; renderHistorique(); });
+
+// ---------------------------------------------------------------------
+// DOSSIER CURATIF MULTI-JOURS (journal de passages -> une seule fiche)
+// Un passage = une ligne (date + technicien) : heures et travaux de ce technicien ce jour-là.
+// Nombre de déplacements = nombre de jours distincts avec au moins un passage (modifiable sur la fiche).
+// ---------------------------------------------------------------------
+// <PURE>
+const fmtDate = (s) => { const d = parseLocal(s); return `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()}`; };
+
+function dossierStats(passages) {
+  const dates = [...new Set(passages.map((p) => p.date))].sort();
+  const totals = {};
+  passages.forEach((p) => {
+    const k = `${p.tech}||${p.unite || "Heure(s)"}`;
+    totals[k] = (totals[k] || 0) + (Number(p.qte) || 0);
+  });
+  return { dates, deplacements: dates.length, totals };
+}
+
+function buildDossierTravaux(intv, passages, mode) {
+  const st = dossierStats(passages);
+  let t = mode === "final" ? "" : "[FICHE D'ÉTAPE : intervention en cours]\n";
+  t += "Intervention curative réalisée sur plusieurs jours.\n";
+  if (intv.panne) t += `Motif : ${intv.panne}\n`;
+  t += `Machine : ${intv.machine}\n\n📌 JOURNAL DES TRAVAUX :\n`;
+  st.dates.forEach((date) => {
+    const byText = new Map();
+    passages.filter((p) => p.date === date).forEach((p) => {
+      const k = String(p.travaux || "").trim();
+      if (!byText.has(k)) byText.set(k, []);
+      byText.get(k).push(p.tech);
+    });
+    byText.forEach((techs, text) => { t += `\n• ${fmtDate(date)} (${techs.join(", ")}) :\n${text}\n`; });
+  });
+  t += `\nNombre de déplacements : ${st.deplacements}`;
+  return t;
+}
+// </PURE>
+
+let dossierUnsub = null;
+let dossierData = { id: null, passages: [] };
+
+function closeDossier() {
+  if (dossierUnsub) { dossierUnsub(); dossierUnsub = null; }
+  dossierData = { id: null, passages: [] };
+  ["passageForm", "dossierModal"].forEach((id) => { const el = $(id); if (el) el.remove(); });
+}
+
+function openDossier(id) {
+  const intv = allInterventions.find((i) => i.id === id); if (!intv) return;
+  closeDossier();
+  dossierData = { id, passages: [] };
+  const ov = document.createElement("div");
+  ov.id = "dossierModal";
+  ov.className = "fixed inset-0 bg-slate-900 bg-opacity-60 flex items-center justify-center z-[75] px-3 backdrop-blur-sm";
+  ov.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
+    <div class="px-5 py-4 border-b flex justify-between items-start bg-slate-50 rounded-t-2xl"><div class="min-w-0"><h3 class="text-lg font-bold text-slate-800"><i class="fa-solid fa-folder-open text-orange-500 mr-2"></i>Dossier multi-jours</h3><p class="text-sm text-brand-600 font-medium truncate">${esc(intv.client)} | ${esc(intv.machine)}</p>${intv.panne ? `<p class="text-xs text-slate-500 mt-1">${esc(intv.panne)}</p>` : ""}</div><button data-act="dossier-close" class="text-slate-400 hover:bg-slate-200 w-8 h-8 rounded-full shrink-0"><i class="fa-solid fa-xmark text-lg"></i></button></div>
+    <div id="dossierBody" class="p-4 overflow-y-auto custom-scroll flex-1"></div>
+    <div class="p-4 border-t bg-slate-50 rounded-b-2xl space-y-2">
+      <button data-act="passage-add" data-id="${esc(id)}" class="w-full py-3 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-xl"><i class="fa-solid fa-plus mr-2"></i> Ajouter un passage</button>
+      <div class="grid grid-cols-2 gap-2">
+        <button data-act="dossier-fiche" data-id="${esc(id)}" data-mode="etape" class="py-2.5 bg-white border border-slate-300 text-slate-700 font-bold rounded-xl text-sm">Fiche d'étape</button>
+        <button data-act="dossier-fiche" data-id="${esc(id)}" data-mode="final" class="py-2.5 bg-green-500 hover:bg-green-600 text-white font-bold rounded-xl text-sm">Clôturer + fiche finale</button>
+      </div>
+      <p class="text-[11px] text-slate-500">Fiche d'étape : le dossier reste ouvert. Fiche finale : le dossier est archivé après l'impression.</p>
+      ${isAdmin ? `<button data-act="dossier-delete" data-id="${esc(id)}" class="w-full text-xs text-red-500 hover:text-red-700 font-medium">Supprimer ce dossier</button>` : ""}
+    </div></div>`;
+  document.body.appendChild(ov);
+  dossierUnsub = onSnapshot(query(collection(db, "interventions", id, "passages"), orderBy("date", "asc")), (snap) => {
+    dossierData = { id, passages: snap.docs.map((d) => ({ ...d.data(), id: d.id })) };
+    renderDossierBody();
+  }, onListenError("passages"));
+}
+
+function renderDossierBody() {
+  const body = $("dossierBody"); if (!body) return;
+  const ps = dossierData.passages, st = dossierStats(ps);
+  const totals = Object.entries(st.totals).map(([k, v]) => { const [tech, unite] = k.split("||"); return `<span class="inline-block bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-700">${esc(tech)} : ${esc(v)} ${unite === "Jour(s)" ? "j" : "h"}</span>`; }).join(" ");
+  let html = `<div class="bg-brand-50 border border-brand-100 rounded-xl p-4 mb-4"><div class="flex flex-wrap gap-4 text-sm font-bold text-brand-900 mb-2"><span><i class="fa-solid fa-route mr-1"></i>${st.deplacements} déplacement(s)</span><span><i class="fa-solid fa-list-check mr-1"></i>${ps.length} entrée(s)</span></div><div class="flex flex-wrap gap-2">${totals || '<span class="text-xs text-slate-400 italic">Aucune heure saisie.</span>'}</div></div>`;
+  if (ps.length === 0) html += '<p class="text-slate-400 text-sm italic text-center py-6">Aucun passage pour l\'instant. Cliquez sur « Ajouter un passage ».</p>';
+  html += st.dates.map((date) => {
+    const rows = ps.filter((p) => p.date === date).map((p) => {
+      const mine = isAdmin || p.uid === currentUser.uid;
+      const edit = `<button data-act="passage-edit" data-did="${esc(dossierData.id)}" data-id="${esc(p.id)}" class="text-slate-400 hover:text-brand-500 px-1"><i class="fa-solid fa-pen"></i></button>`;
+      const del = mine ? `<button data-act="passage-del" data-did="${esc(dossierData.id)}" data-id="${esc(p.id)}" class="text-slate-400 hover:text-red-500 px-1"><i class="fa-solid fa-trash-can"></i></button>` : "";
+      return `<div class="px-3 py-2 border-t border-slate-100 flex justify-between gap-2"><div class="min-w-0"><p class="text-sm font-bold text-slate-800">${esc(p.tech)} <span class="font-normal text-slate-500">· ${esc(p.qte)} ${p.unite === "Jour(s)" ? "j" : "h"}</span></p><p class="text-sm text-slate-600 whitespace-pre-line break-words">${esc(p.travaux)}</p></div><div class="shrink-0 flex gap-1">${edit}${del}</div></div>`;
+    }).join("");
+    return `<div class="border border-slate-100 rounded-xl mb-3 overflow-hidden"><div class="bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700"><i class="fa-solid fa-calendar-day mr-1 text-slate-400"></i>${fmtDate(date)}</div>${rows}</div>`;
+  }).join("");
+  body.innerHTML = html;
+}
+
+function openPassageForm(dossierId, passageId) {
+  const editing = passageId ? dossierData.passages.find((p) => p.id === passageId) : null;
+  const names = Array.from(document.querySelectorAll('input[name="tech"]')).map((cb) => cb.value);
+  const field = "w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white";
+  const techBlock = editing
+    ? `<p class="text-sm font-bold text-slate-800">${esc(editing.tech)}</p>`
+    : `<div class="grid grid-cols-2 gap-2 text-sm bg-slate-50 p-3 rounded-xl border border-slate-200">${names.map((n) => `<label class="flex items-center gap-2"><input type="checkbox" name="ptech" value="${esc(n)}" class="w-4 h-4 rounded border-slate-300"><span>${esc(n)}</span></label>`).join("")}</div>`;
+  const ov = document.createElement("div");
+  ov.id = "passageForm";
+  ov.className = "fixed inset-0 bg-slate-900 bg-opacity-60 flex items-center justify-center z-[85] px-3";
+  ov.innerHTML = `<form class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 space-y-3 max-h-[92vh] overflow-y-auto"><h3 class="text-lg font-bold text-slate-800">${editing ? "Modifier le passage" : "Ajouter un passage"}</h3>
+    <div><label class="block text-xs font-bold text-slate-600 mb-1">Date</label><input type="date" name="date" required value="${esc(editing ? editing.date : localDateStr())}" ${editing ? "readonly" : ""} class="${field}"></div>
+    <div><label class="block text-xs font-bold text-slate-600 mb-1">${editing ? "Technicien" : "Technicien(s) présent(s) ce jour-là"}</label>${techBlock}</div>
+    <div class="flex gap-2"><div class="w-1/2"><label class="block text-xs font-bold text-slate-600 mb-1">Temps passé (par technicien)</label><input type="number" name="qte" required min="0.5" step="0.5" value="${esc(editing ? editing.qte : 8)}" class="${field}"></div><div class="w-1/2"><label class="block text-xs font-bold text-slate-600 mb-1">Unité</label><select name="unite" class="${field}"><option value="Heure(s)"${editing && editing.unite === "Jour(s)" ? "" : " selected"}>Heure(s)</option><option value="Jour(s)"${editing && editing.unite === "Jour(s)" ? " selected" : ""}>Jour(s)</option></select></div></div>
+    <div><label class="block text-xs font-bold text-slate-600 mb-1">Travaux réalisés ce jour-là</label><textarea name="travaux" required rows="5" class="${field}" placeholder="Ex : diagnostic du variateur, remplacement du câble…">${esc(editing ? editing.travaux : "")}</textarea></div>
+    <div class="flex gap-2 pt-1"><button type="button" data-cancel class="flex-1 py-2.5 bg-slate-100 rounded-xl text-sm font-bold">Annuler</button><button type="submit" class="flex-1 py-2.5 bg-brand-500 text-white rounded-xl text-sm font-bold">Enregistrer</button></div></form>`;
+  document.body.appendChild(ov);
+  ov.querySelector("[data-cancel]").addEventListener("click", () => ov.remove());
+  ov.querySelector("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const btn = e.target.querySelector('button[type="submit"]'); btn.disabled = true;
+    const ok = await savePassage(dossierId, {
+      date: fd.get("date"), techs: editing ? [editing.tech] : fd.getAll("ptech"),
+      qte: parseFloat(fd.get("qte")), unite: fd.get("unite"), travaux: String(fd.get("travaux") || "").trim()
+    });
+    if (ok) ov.remove(); else btn.disabled = false;
+  });
+}
+
+async function savePassage(dossierId, p) {
+  if (!p.date) { toast("La date est obligatoire.", "error"); return false; }
+  if (p.techs.length === 0) { toast("Cochez au moins un technicien.", "error"); return false; }
+  if (!(p.qte > 0)) { toast("Indiquez un temps passé valide.", "error"); return false; }
+  if (!p.travaux) { toast("Décrivez les travaux réalisés.", "error"); return false; }
+  const existing = p.techs.filter((t) => dossierData.passages.some((x) => x.id === recurrenceId(p.date, t)));
+  if (existing.length > 0 && !confirm(`Une saisie existe déjà ce jour-là pour : ${existing.join(", ")}.\nLa remplacer ?`)) return false;
+  try {
+    const batch = writeBatch(db);
+    p.techs.forEach((t) => {
+      batch.set(doc(db, "interventions", dossierId, "passages", recurrenceId(p.date, t)), {
+        date: p.date, tech: t, qte: p.qte, unite: p.unite === "Jour(s)" ? "Jour(s)" : "Heure(s)", travaux: p.travaux,
+        uid: currentUser.uid, email: currentUser.email, maj: serverTimestamp()
+      });
+    });
+    await withTimeout(batch.commit());
+    toast("Passage enregistré.", "success");
+    return true;
+  } catch (err) { console.error(err); toast("Enregistrement refusé : " + (err.code || err.message), "error"); return false; }
+}
+
+function supprimerPassage(dossierId, passageId) {
+  if (!confirm("Supprimer cette saisie ?")) return;
+  return safe(() => deleteDoc(doc(db, "interventions", dossierId, "passages", passageId)));
+}
+
+async function supprimerDossier(id) {
+  if (!confirm("Supprimer définitivement ce dossier et tous ses passages ?")) return;
+  try {
+    const batch = writeBatch(db);
+    dossierData.passages.forEach((p) => batch.delete(doc(db, "interventions", id, "passages", p.id)));
+    batch.delete(doc(db, "interventions", id));
+    await batch.commit();
+    closeDossier();
+    toast("Dossier supprimé.", "success");
+  } catch (err) { console.error(err); toast("Suppression refusée : " + (err.code || err.message), "error"); }
+}
+
+// Remplit l'éditeur de fiche avec le journal : une seule fiche, toute l'équipe, heures cumulées, nb de déplacements.
+function genererFicheDossier(id, mode) {
+  const intv = allInterventions.find((i) => i.id === id); if (!intv) return;
+  const ps = dossierData.id === id ? dossierData.passages : [];
+  if (ps.length === 0) return toast("Ajoutez au moins un passage avant de générer la fiche.", "error");
+  const st = dossierStats(ps);
+  $("input_fisav").value = ""; $("input_reference").value = "";
+  $("input_client").value = intv.client; $("input_machine").value = intv.machine;
+  $("input_date").value = st.dates[st.dates.length - 1];
+  $("input_forfait_ref").value = "DEPAN"; $("input_forfait_nom").value = "SAV-Depannage";
+  $("input_forfait_diag").value = intv.panne || "Intervention curative sur plusieurs jours";
+  $("input_travaux").value = buildDossierTravaux(intv, ps, mode);
+  $("input_deplacements").value = st.deplacements;
+  $("fiche-tech-list").innerHTML = Object.entries(st.totals).map(([k, v]) => { const [tech, unite] = k.split("||"); return techRowHTML(tech, v, unite); }).join("");
+  window.__pendingArchive = mode === "final" ? [id] : [];
+  setEditMode(null);
+  closeDossier();
+  showView("fiches");
+  toast(mode === "final" ? "Fiche finale prête : renseignez le N° FISAV puis imprimez (le dossier sera archivé ensuite)." : "Fiche d'étape prête : renseignez le N° FISAV puis imprimez.", "success");
+}
 
 // ---------------------------------------------------------------------
 // ÉCOUTEURS DÉLÉGUÉS (remplacent tous les onclick/onsubmit inline dynamiques)
@@ -849,6 +1124,14 @@ document.addEventListener("click", (e) => {
     case "logout": return logout();
     case "open-fiche": return openFiche(id);
     case "new-fiche": return newFiche();
+    case "edit-machine": return openMachineEditor(id, machine);
+    case "dossier": return openDossier(id);
+    case "dossier-close": return closeDossier();
+    case "passage-add": return openPassageForm(id, null);
+    case "passage-edit": return openPassageForm(el.dataset.did, id);
+    case "passage-del": return supprimerPassage(el.dataset.did, id);
+    case "dossier-fiche": return genererFicheDossier(id, el.dataset.mode);
+    case "dossier-delete": return supprimerDossier(id);
     case "del-piece":
       tempKitPieces = tempKitPieces.filter((p) => !(p.ref === ref && p.nom === nom));
       return afficherPiecesKitTemp();
@@ -860,14 +1143,13 @@ document.addEventListener("click", (e) => {
   }
 });
 
-document.addEventListener("submit", (e) => {
+document.addEventListener("submit", async (e) => {
   const form = e.target.closest("[data-machine-form]");
   if (!form) return;
   e.preventDefault();
-  const input = form.querySelector('input[name="machine"]');
-  const nom = input.value.trim(); if (!nom) return;
-  ajouterMachineParc(form.dataset.machineForm, nom);
-  input.value = "";
+  const v = (n) => form.querySelector(`[name="${n}"]`).value;
+  const ok = await ajouterMachineParc(form.dataset.machineForm, { type: v("type"), repere: v("repere"), serie: v("serie") });
+  if (ok) form.reset();
 });
 
 // ---------------------------------------------------------------------

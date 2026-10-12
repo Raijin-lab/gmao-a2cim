@@ -1,6 +1,6 @@
 // GMAO A2CIM - Service Worker
 // Incrémenter VERSION à chaque déploiement pour renouveler les caches.
-const VERSION = 'v43';
+const VERSION = 'v39';
 const SHELL_CACHE = `gmao-shell-${VERSION}`;
 const CDN_CACHE = `gmao-cdn-${VERSION}`;
 
