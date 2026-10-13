@@ -111,12 +111,41 @@ window.addEventListener("beforeinstallprompt", () => { installPromptSeen = true;
     } catch (e) { add("ko", "Page de démarrage inaccessible", e.message); }
   }
 
+  // 5b. Fichiers réellement en ligne (vérifie que la dernière version est publiée)
+  const getText = async (p) => {
+    const r = await fetch(new URL(p, location.href).href, { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return { text: await r.text(), mod: r.headers.get("last-modified") };
+  };
+  if (manifest) add("info", "Manifeste en ligne", "start_url = " + manifest.start_url + " | orientation = " + (manifest.orientation || "(non définie)") + "  (version attendue : start_url ./index.html, orientation any)");
+  try {
+    const idx = await getText("index.html");
+    const v = (idx.text.match(/app\.js\?v=(\d+)/) || [])[1];
+    add(v && Number(v) >= 44 ? "ok" : "ko", "index.html en ligne", "app.js?v=" + (v || "?") + " (attendu : 44 ou plus) | modifié : " + (idx.mod || "?"));
+    add(idx.text.includes("data-install") ? "ok" : "ko", "Bouton « Installer » dans index.html", idx.text.includes("data-install") ? "présent" : "ABSENT : index.html n'est pas à jour sur GitHub");
+    add(idx.text.includes('data-view="docs"') ? "ok" : "ko", "Onglet Base Doc. dans index.html", idx.text.includes('data-view="docs"') ? "présent" : "ABSENT");
+  } catch (e) { add("ko", "index.html illisible", e.message); }
+  try {
+    const app = await getText("app.js");
+    const feats = [["registerSW", "service worker enregistré avant la connexion"], ["DOC_ROOT", "base documentaire"], ["openDossier", "dossier multi-jours"], ["renameMachine", "machines structurées"], ["renderHistorique", "historique des fiches"], ["authReady", "connexion Firebase"]];
+    const missing = feats.filter((f) => !app.text.includes(f[0])).map((f) => f[1]);
+    add(missing.length ? "ko" : "ok", "app.js en ligne", (missing.length ? "FONCTIONS ABSENTES : " + missing.join(", ") : "toutes les fonctions attendues sont présentes") + " | modifié : " + (app.mod || "?"));
+  } catch (e) { add("ko", "app.js illisible", e.message); }
+  try {
+    const sw = await getText("sw.js");
+    const v = (sw.text.match(/VERSION = 'v(\d+)'/) || [])[1];
+    add(v && Number(v) >= 40 ? "ok" : "warn", "sw.js en ligne", "version v" + (v || "?") + " (attendue : v40 ou plus)");
+  } catch (e) { add("ko", "sw.js illisible", e.message); }
+
   // 6. Service worker
   if (!("serviceWorker" in navigator)) add("ko", "Service worker non pris en charge", "navigateur trop ancien ou contexte non sécurisé");
   else {
     try {
       let reg = await navigator.serviceWorker.getRegistration();
-      if (!reg) reg = await navigator.serviceWorker.register("./sw.js");
+      if (!reg) {
+        add("warn", "Aucun service worker enregistré avant ce test", "L'application elle-même ne l'a pas enregistré (ouvrez d'abord l'application, ou mettez app.js à jour).");
+        reg = await navigator.serviceWorker.register("./sw.js");
+      }
       await Promise.race([navigator.serviceWorker.ready, new Promise((res) => setTimeout(res, 8000))]);
       const state = reg.active ? "actif" : reg.installing ? "en cours d'installation" : reg.waiting ? "en attente" : "inconnu";
       add(reg.active ? "ok" : "warn", "Service worker", state + " | portée " + reg.scope);
