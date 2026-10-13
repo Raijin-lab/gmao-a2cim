@@ -45,6 +45,36 @@ window.addEventListener("offline", () => toast("Hors-ligne : les modifications s
 window.addEventListener("online", () => toast("Connexion rétablie.", "success"));
 
 // ---------------------------------------------------------------------
+// PWA : service worker + installation
+// Placé AVANT la connexion : le "await authReady" plus bas suspend l'exécution du reste du fichier.
+// ---------------------------------------------------------------------
+if ("serviceWorker" in navigator) {
+  const registerSW = () => navigator.serviceWorker.register("./sw.js").catch((err) => console.error("Erreur SW", err));
+  if (document.readyState === "complete") registerSW(); else window.addEventListener("load", registerSW);
+}
+let deferredInstall = null;
+const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+function refreshInstallUI() {
+  const hide = isStandalone();   // déjà installée : on masque les boutons d'installation
+  document.querySelectorAll("[data-install]").forEach((el) => el.classList.toggle("hidden", hide));
+}
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredInstall = e; refreshInstallUI(); });
+window.addEventListener("appinstalled", () => { deferredInstall = null; toast("Application installée.", "success"); refreshInstallUI(); });
+document.addEventListener("click", async (e) => {
+  if (!e.target.closest("[data-install]")) return;
+  if (deferredInstall) {
+    deferredInstall.prompt();
+    try { await deferredInstall.userChoice; } catch (_) { /* ignoré */ }
+    deferredInstall = null;
+    return;
+  }
+  if (isIOS) alert("Sur iPhone / iPad :\n1. Ouvrez ce site dans Safari.\n2. Touchez le bouton Partager (carré avec une flèche).\n3. Choisissez « Sur l'écran d'accueil ».");
+  else alert("Sur Android :\n1. Ouvrez ce site dans Chrome (pas dans WhatsApp ou Facebook).\n2. Menu ⋮ en haut à droite.\n3. « Installer l'application » (ou « Ajouter à l'écran d'accueil »).\n\nSi l'option n'apparaît pas : fermez complètement le navigateur et rouvrez le site une fois.");
+});
+refreshInstallUI();
+
+// ---------------------------------------------------------------------
 // AUTHENTIFICATION & RÔLE
 // ---------------------------------------------------------------------
 const currentUser = await authReady;
@@ -71,12 +101,13 @@ function applyRoleUI() {
   const aside = document.querySelector("aside");
   const info = `<div class="text-xs text-blue-200 mb-2 truncate">${esc(currentUser.email)} · ${isAdmin ? "Admin" : "Technicien"}</div>`;
   if (aside) {
-    aside.insertAdjacentHTML("beforeend", `<div class="p-4 border-t border-brand-800">${info}<button data-act="logout" class="w-full text-left px-4 py-2 text-sm text-brand-100 hover:bg-brand-800 rounded-xl"><i class="fa-solid fa-right-from-bracket mr-2"></i>Déconnexion</button></div>`);
+    aside.insertAdjacentHTML("beforeend", `<div class="p-4 border-t border-brand-800">${info}<button data-install class="w-full text-left px-4 py-2 text-sm text-amber-300 hover:bg-brand-800 rounded-xl mb-1"><i class="fa-solid fa-download mr-2"></i>Installer l'application</button><button data-act="logout" class="w-full text-left px-4 py-2 text-sm text-brand-100 hover:bg-brand-800 rounded-xl"><i class="fa-solid fa-right-from-bracket mr-2"></i>Déconnexion</button></div>`);
   }
   const mobileHeader = document.querySelector("div.flex-1 > header");
-  if (mobileHeader) mobileHeader.insertAdjacentHTML("beforeend", `<button data-act="logout" class="text-blue-200 text-sm"><i class="fa-solid fa-right-from-bracket"></i></button>`);
+  if (mobileHeader) mobileHeader.insertAdjacentHTML("beforeend", `<div class="flex items-center gap-4"><button data-install class="text-amber-300 text-sm" title="Installer l'application"><i class="fa-solid fa-download"></i></button><button data-act="logout" class="text-blue-200 text-sm"><i class="fa-solid fa-right-from-bracket"></i></button></div>`);
 }
 applyRoleUI();
+refreshInstallUI();
 
 // ---------------------------------------------------------------------
 // ÉTAT GLOBAL
@@ -1255,6 +1286,4 @@ document.addEventListener("submit", async (e) => {
 // ---------------------------------------------------------------------
 // SERVICE WORKER
 // ---------------------------------------------------------------------
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch((err) => console.error("Erreur SW", err)));
-}
+// (le service worker est enregistré en haut du fichier, avant la connexion)
