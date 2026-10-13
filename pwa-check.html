@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diagnostic installation - GMAO A2CIM</title>
+<link rel="manifest" href="manifest.json">
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 16px; background: #f8fafc; color: #0f172a; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: #475569; font-size: 14px; }
+  .row { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; margin: 8px 0; border-left-width: 6px; }
+  .ok { border-left-color: #16a34a; } .ko { border-left-color: #dc2626; } .warn { border-left-color: #f59e0b; } .info { border-left-color: #3b82f6; }
+  .t { font-weight: 700; font-size: 15px; }
+  .d { font-size: 13px; color: #475569; margin-top: 4px; word-break: break-all; }
+  #verdict { font-weight: 700; font-size: 16px; }
+  button { width: 100%; padding: 14px; margin: 12px 0; border: 0; border-radius: 12px; background: #1e3a8a; color: #fff; font-size: 16px; font-weight: 700; }
+</style>
+</head>
+<body>
+<h1>Diagnostic d'installation</h1>
+<p class="sub">Ouvrez cette page sur le téléphone concerné, attendez 10 secondes, puis envoyez une capture d'écran ou le rapport copié.</p>
+<div id="verdict" class="row info">Analyse en cours…</div>
+<div id="out"></div>
+<button id="copyBtn" type="button">Copier le rapport</button>
+
+<script>
+// <PNG>
+function pngInfo(buf) {
+  const b = new Uint8Array(buf);
+  const sig = b.length > 24 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47;
+  if (!sig) return { png: false, w: 0, h: 0 };
+  const dv = new DataView(buf);
+  return { png: true, w: dv.getUint32(16), h: dv.getUint32(20) };
+}
+// </PNG>
+
+const out = document.getElementById("out");
+const lines = [];
+const MARK = { ok: "✅", warn: "⚠️", ko: "❌", info: "ℹ️" };
+let nKo = 0, nWarn = 0;
+
+function add(level, title, detail) {
+  if (level === "ko") nKo++; if (level === "warn") nWarn++;
+  const d = document.createElement("div"); d.className = "row " + level;
+  const t = document.createElement("div"); t.className = "t"; t.textContent = MARK[level] + " " + title; d.appendChild(t);
+  if (detail) { const x = document.createElement("div"); x.className = "d"; x.textContent = detail; d.appendChild(x); }
+  out.appendChild(d);
+  lines.push(MARK[level] + " " + title + (detail ? " : " + detail : ""));
+}
+
+let installPromptSeen = false;
+window.addEventListener("beforeinstallprompt", () => { installPromptSeen = true; });
+
+(async function run() {
+  // 1. Adresse et HTTPS
+  const host = location.hostname;
+  const privateNet = /^(192\.168|10\.|172\.(1[6-9]|2\d|3[01]))\./.test(host);
+  add(window.isSecureContext ? "ok" : "ko", "Connexion sécurisée (HTTPS)",
+    location.href + (window.isSecureContext ? "" : "  →  Sans HTTPS, l'installation est impossible. Utilisez l'adresse https://… du site publié (GitHub Pages), pas une adresse locale ni http://."));
+  if (privateNet || /^localhost$/.test(host)) add("ko", "Adresse locale détectée", "Un téléphone ne peut installer que le site publié en HTTPS, pas l'adresse de l'ordinateur de développement (" + host + ").");
+
+  // 2. Navigateur
+  const ua = navigator.userAgent;
+  const inApp = /FBAN|FBAV|Instagram|WhatsApp|Line\/|MicroMessenger|Snapchat|TikTok|GSA\/|; wv\)/i.test(ua) || (/iPhone|iPad|iPod/.test(ua) && !/Safari\//.test(ua));
+  add(inApp ? "ko" : "ok", "Navigateur", ua + (inApp ? "  →  Navigateur intégré à une autre application (WhatsApp, Facebook, etc.). Ouvrez le site dans Chrome (Android) ou Safari (iPhone)." : ""));
+  if (/iPhone|iPad|iPod/.test(ua) && /CriOS|FxiOS|EdgiOS/.test(ua)) add("warn", "iPhone avec un autre navigateur que Safari", "Utilisez Safari : Partager > Sur l'écran d'accueil.");
+  const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  add("info", "Mode d'affichage actuel", standalone ? "application installée (plein écran)" : "onglet de navigateur");
+
+  // 3. Manifeste
+  const manifestUrl = new URL("manifest.json", location.href).href;
+  let manifest = null;
+  try {
+    const r = await fetch(manifestUrl, { cache: "no-store" });
+    if (!r.ok) add("ko", "manifest.json", "HTTP " + r.status + " à l'adresse " + manifestUrl);
+    else { manifest = await r.json(); add("ok", "manifest.json lisible", "type " + (r.headers.get("content-type") || "?")); }
+  } catch (e) { add("ko", "manifest.json illisible", e.message); }
+
+  let start = null;
+  if (manifest) {
+    const missing = ["name", "start_url", "display", "icons"].filter((k) => !manifest[k] || (k === "icons" && !manifest.icons.length));
+    add(missing.length ? "ko" : "ok", "Champs obligatoires du manifeste", missing.length ? "manquants : " + missing.join(", ") : "name, start_url, display, icons présents");
+    add(["standalone", "fullscreen", "minimal-ui"].includes(manifest.display) ? "ok" : "ko", "Mode d'affichage du manifeste", String(manifest.display));
+    if (manifest.prefer_related_applications) add("ko", "prefer_related_applications", "doit être absent ou false");
+    start = new URL(manifest.start_url || ".", manifestUrl);
+    const scope = new URL(manifest.scope || ".", manifest.scope ? manifestUrl : start);
+    add(start.href.startsWith(scope.href) ? "ok" : "ko", "start_url dans la portée (scope)", "start_url = " + start.href + " | scope = " + scope.href);
+
+    // 4. Icônes (lecture réelle des dimensions dans le fichier PNG)
+    const real = [];
+    for (const ic of manifest.icons || []) {
+      const url = new URL(ic.src, manifestUrl).href;
+      try {
+        const r = await fetch(url, { cache: "no-store" });
+        if (!r.ok) { add("ko", "Icône " + ic.src, "HTTP " + r.status + " : fichier introuvable à " + url); continue; }
+        const buf = await r.arrayBuffer(); const info = pngInfo(buf);
+        const okSize = info.png && ic.sizes === info.w + "x" + info.h;
+        add(okSize ? "ok" : "ko", "Icône " + ic.src + " (" + (ic.purpose || "any") + ")",
+          "déclarée " + ic.sizes + " | réelle " + (info.png ? info.w + "x" + info.h : "PAS un PNG valide") + " | " + Math.round(buf.byteLength / 1024) + " Ko");
+        if (info.png) real.push({ w: info.w, h: info.h, purpose: ic.purpose || "any" });
+      } catch (e) { add("ko", "Icône " + ic.src, e.message); }
+    }
+    const has = (n) => real.some((i) => i.w >= n && i.h >= n && /any/.test(i.purpose));
+    add(has(192) && has(512) ? "ok" : "ko", "Icônes exigées par Android", "il faut un vrai PNG ≥ 192×192 ET un vrai PNG ≥ 512×512 (usage « any »). Sur PC, 144×144 suffit : c'est pourquoi l'installation peut marcher sur PC et pas sur téléphone.");
+
+    // 5. Page de démarrage
+    try {
+      const r = await fetch(start.href, { cache: "no-store" });
+      add(r.ok ? (r.redirected ? "warn" : "ok") : "ko", "Page de démarrage (start_url)", "HTTP " + r.status + (r.redirected ? " (redirigée vers " + r.url + ")" : "") + " | " + start.href);
+    } catch (e) { add("ko", "Page de démarrage inaccessible", e.message); }
+  }
+
+  // 6. Service worker
+  if (!("serviceWorker" in navigator)) add("ko", "Service worker non pris en charge", "navigateur trop ancien ou contexte non sécurisé");
+  else {
+    try {
+      let reg = await navigator.serviceWorker.getRegistration();
+      if (!reg) reg = await navigator.serviceWorker.register("./sw.js");
+      await Promise.race([navigator.serviceWorker.ready, new Promise((res) => setTimeout(res, 8000))]);
+      const state = reg.active ? "actif" : reg.installing ? "en cours d'installation" : reg.waiting ? "en attente" : "inconnu";
+      add(reg.active ? "ok" : "warn", "Service worker", state + " | portée " + reg.scope);
+      if (reg.active && start && !start.href.startsWith(reg.scope)) add("ko", "Le service worker ne couvre pas la page de démarrage", reg.scope + " ≠ " + start.href);
+    } catch (e) { add("ko", "Service worker en erreur", e.message); }
+  }
+
+  // 7. Proposition d'installation
+  await new Promise((res) => setTimeout(res, 2500));
+  add(installPromptSeen ? "ok" : "warn", "Proposition d'installation du navigateur",
+    installPromptSeen ? "reçue : le bouton « Installer » doit apparaître" : "non reçue (normal sur iPhone/Safari, qui n'envoie jamais cet événement ; sur Android, voir les ❌ ci-dessus)");
+
+  const v = document.getElementById("verdict");
+  v.className = "row " + (nKo ? "ko" : nWarn ? "warn" : "ok");
+  v.textContent = nKo ? nKo + " problème(s) bloquant(s) trouvé(s) : voir les lignes ❌" : "Aucun problème bloquant détecté" + (nWarn ? " (" + nWarn + " avertissement(s))" : "");
+  lines.unshift("RAPPORT : " + v.textContent);
+})();
+
+document.getElementById("copyBtn").addEventListener("click", async () => {
+  const text = lines.join("\n");
+  try { await navigator.clipboard.writeText(text); alert("Rapport copié. Collez-le dans la conversation."); }
+  catch (_) {
+    const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); alert("Rapport copié."); } catch (e) { alert(text); }
+    ta.remove();
+  }
+});
+</script>
+</body>
+</html>
