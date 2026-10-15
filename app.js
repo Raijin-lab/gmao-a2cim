@@ -125,6 +125,10 @@ let currentClientFilter = "ALL";
 let currentTypeFilter = "ALL";
 let historiqueDB = [];
 let historiqueFilter = "";
+let historiqueType = "ALL";
+let historiqueMonth = "";
+let historiqueClient = "";
+let archivedInterventions = [];
 let currentFicheId = null;   // non nul = on modifie une fiche déjà enregistrée
 window.__pendingArchive = [];
 const withTimeout = (p, ms = 4000) => Promise.race([p, new Promise((res) => setTimeout(() => res("timeout"), ms))]);
@@ -576,14 +580,14 @@ $("btnSetTermine").addEventListener("click", async () => {
 onSnapshot(query(collection(db, "interventions"), orderBy("date", "asc")), (snapshot) => {
   const urgent = $("urgent-tasks-container"), upcoming = $("upcoming-tasks-container"), completed = $("completed-tasks-container");
   let urgentHTML = "", upcomingHTML = "", completedHTML = "";
-  allInterventions = []; knownIds = new Set(); groupedInterventionsGlobal = {};
+  allInterventions = []; archivedInterventions = []; knownIds = new Set(); groupedInterventionsGlobal = {};
   let active = 0, retard = 0, enCours = 0, termine = 0;
   const todayStr = localDateStr();
 
   snapshot.forEach((docSnap) => {
     const data = docSnap.data(); data.id = docSnap.id;
     knownIds.add(docSnap.id);
-    if (data.statut === "Archivé") return;
+    if (data.statut === "Archivé") { archivedInterventions.push(data); return; }
     allInterventions.push(data);
 
     const isRetard = data.date < todayStr && !data.multiJours;
@@ -607,7 +611,7 @@ onSnapshot(query(collection(db, "interventions"), orderBy("date", "asc")), (snap
   Object.keys(groupedInterventionsGlobal).forEach((key) => {
     const g = groupedInterventionsGlobal[key];
     const warn = g.isRetard && g.statut !== "Terminé" ? '<span class="text-red-500 font-bold text-xs"><i class="fa-solid fa-triangle-exclamation"></i></span>' : "";
-    const card = `<div data-act="${g.multi ? "dossier" : "group"}" data-key="${esc(key)}" data-id="${esc(g.dossierId || "")}" class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex items-center justify-between hover:shadow-md transition-shadow cursor-pointer"><div class="w-2 self-stretch border-l-4" style="background-color:${g.config.bg};border-color:${g.config.border};"></div><div class="p-4 flex-1 flex items-center justify-between"><div><div class="flex items-center gap-2 mb-1"><h3 class="font-bold text-slate-800 text-base uppercase">${esc(g.client)}</h3>${warn}</div><p class="text-sm text-slate-600 font-medium"><i class="fa-solid fa-microchip mr-1 text-slate-400"></i> ${g.multi ? "Dossier multi-jours · " + esc(g.machines[0].machine) : g.machines.length + " machine(s) " + (g.statut === "Terminé" ? "achevée(s)" : "prévue(s)")}</p><p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-calendar-day mr-1"></i> ${esc(g.dateAffichee)} &nbsp;|&nbsp; <i class="fa-solid fa-wrench mr-1"></i> ${esc(g.type)}</p></div><div class="px-3 py-1.5 rounded-lg text-xs font-bold uppercase" style="background-color:${g.config.bg};color:${g.config.text};border-color:${g.config.border};border-width:1px;">${esc(g.statut)}</div></div></div>`;
+    const card = `<div data-act="${g.multi ? "dossier" : "group"}" data-key="${esc(key)}" data-id="${esc(g.dossierId || "")}" class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex items-center justify-between hover:shadow-md transition-shadow cursor-pointer"><div class="w-2 self-stretch border-l-4" style="background-color:${g.config.bg};border-color:${g.config.border};"></div><div class="p-4 flex-1 flex items-center justify-between"><div><div class="flex items-center gap-2 mb-1"><h3 class="font-bold text-slate-800 text-base uppercase">${esc(g.client)}</h3>${warn}</div><p class="text-sm text-slate-600 font-medium"><i class="fa-solid fa-microchip mr-1 text-slate-400"></i> ${g.multi ? "Dossier multi-jours · " + esc(g.machines[0].machine) : g.machines.length + " machine(s) " + (g.statut === "Terminé" ? "achevée(s)" : "prévue(s)")}</p><p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-calendar-day mr-1"></i> ${esc(g.dateAffichee)} &nbsp;|&nbsp; <i class="fa-solid fa-wrench mr-1"></i> ${esc(g.type)}</p>${g.multi ? `<p class="text-xs font-bold text-orange-700 mt-1" data-dossier-sum="${esc(g.dossierId)}"></p>` : ""}</div><div class="px-3 py-1.5 rounded-lg text-xs font-bold uppercase" style="background-color:${g.config.bg};color:${g.config.text};border-color:${g.config.border};border-width:1px;">${esc(g.statut)}</div></div></div>`;
     if (g.statut === "Terminé") completedHTML += card;
     else if (g.type === "Curatif" || g.isRetard || g.statut === "En retard") urgentHTML += card;
     else upcomingHTML += card;
@@ -621,6 +625,10 @@ onSnapshot(query(collection(db, "interventions"), orderBy("date", "asc")), (snap
   if ($("kpi-encours")) $("kpi-encours").textContent = enCours;
   if ($("kpi-termine")) $("kpi-termine").textContent = termine;
   updateCalendarEvents();
+  syncPassageListeners();
+  renderZones();
+  updateBadges();
+  applyDossierSummaries();
 }, onListenError("interventions"));
 
 function ouvrirModalGroupe(groupKey) {
@@ -744,7 +752,7 @@ if ($("addInterventionForm")) {
 const navLinks = document.querySelectorAll(".nav-link");
 const appViews = document.querySelectorAll(".app-view");
 const addBtn = $("addInterventionBtn");
-const viewsWithAddBtn = ["dashboard", "planning", "curatif"];
+const viewsWithAddBtn = ["dashboard", "planning", "curatif", "preventif"];
 
 function showView(target) {
   if (!$(`view-${target}`)) return;
@@ -857,6 +865,7 @@ window.prepareAndPrint = async function () {
     numero_fisav: fisavRaw, reference_intervention: reference, client: clientRaw, machine: machineRaw,
     date_intervention: dateRaw, date_tirage: `${dateTirage} ${heureTirage}`,
     forfait_ref: refForfait, forfait_nom: nomForfait, forfait_diag: diagForfait, diagnostic: diagForfait,
+    type_fiche: ficheType({ forfait_ref: refForfait, forfait_diag: diagForfait }),
     travaux_realises: travaux, techniciens_intervenants: detailTechniciens, total_temps: total, nb_deplacements: nbDepl
   };
   try {
@@ -903,17 +912,42 @@ onSnapshot(query(collection(db, "historique_interventions"), orderBy("timestamp_
 
 function renderHistorique() {
   const c = $("historique-container"); if (!c) return;
+  const monthOf = (h) => String(h.date_intervention || "").slice(0, 7);
+  const fillSelect = (el, allLabel, opts, current) => {
+    if (!el) return;
+    el.innerHTML = `<option value="">${esc(allLabel)}</option>` + opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
+    el.value = opts.some(([v]) => v === current) ? current : "";
+  };
+  const months = [...new Set(historiqueDB.map(monthOf).filter(Boolean))].sort().reverse();
+  const clients = [...new Set(historiqueDB.map((h) => h.client).filter(Boolean))].sort((x, y) => x.localeCompare(y, "fr"));
+  if (!months.includes(historiqueMonth)) historiqueMonth = "";
+  if (!clients.includes(historiqueClient)) historiqueClient = "";
+  fillSelect($("historiqueMois"), "Tous les mois", months.map((m) => [m, new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1, 1).toLocaleDateString("fr-FR", { month: "long", year: "numeric" })]), historiqueMonth);
+  fillSelect($("historiqueClient"), "Tous les clients", clients.map((x) => [x, x]), historiqueClient);
+
   const q = historiqueFilter.trim().toLowerCase();
-  const list = historiqueDB.filter((h) => !q || [h.numero_fisav, h.client, h.machine, h.reference_intervention].some((v) => String(v ?? "").toLowerCase().includes(q)));
+  const base = historiqueDB.filter((h) =>
+    (!historiqueMonth || monthOf(h) === historiqueMonth) &&
+    (!historiqueClient || h.client === historiqueClient) &&
+    (!q || [h.numero_fisav, h.client, h.machine, h.reference_intervention].some((v) => String(v == null ? "" : v).toLowerCase().includes(q))));
+  const cnt = { ALL: base.length, "Préventif": 0, "Curatif": 0 };
+  base.forEach((h) => { cnt[ficheType(h)]++; });
+  if ($("historique-chips")) {
+    $("historique-chips").innerHTML = [["ALL", "Tous"], ["Préventif", "Préventif"], ["Curatif", "Curatif"]].map(([k, l]) =>
+      `<button data-act="hist-type" data-type="${k}" class="px-3 py-1.5 rounded-full text-xs font-bold border ${historiqueType === k ? "bg-brand-500 text-white border-brand-500" : "bg-white text-slate-600 border-slate-200"}">${l} ${cnt[k]}</button>`).join("");
+  }
+  const list = base.filter((h) => historiqueType === "ALL" || ficheType(h) === historiqueType);
   if ($("historique-count")) $("historique-count").textContent = `${list.length} fiche(s)`;
   if (list.length === 0) { c.innerHTML = '<p class="text-slate-400 text-sm italic py-4 text-center">Aucune fiche trouvée.</p>'; return; }
   c.innerHTML = list.map((h) => {
     const date = h.date_intervention ? parseLocal(h.date_intervention).toLocaleDateString("fr-FR") : "";
     const techs = (h.techniciens_intervenants || []).map((t) => t.nom).join(", ");
     const canEdit = isAdmin || h.uid === currentUser.uid;
+    const typ = ficheType(h);
+    const typeBadge = `<span class="text-[10px] font-bold px-2 py-0.5 rounded uppercase ${typ === "Préventif" ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"}">${typ}</span>`;
     const badge = h.modifie_par ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 uppercase">Modifiée</span>' : "";
     const btn = canEdit ? `<button data-act="open-fiche" data-id="${esc(h.id)}" class="shrink-0 px-3 py-2 bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold rounded-lg"><i class="fa-solid fa-pen-to-square mr-1"></i> Modifier</button>` : "";
-    return `<div class="bg-white rounded-xl shadow-sm border border-slate-100 p-4 flex items-center justify-between gap-3"><div class="min-w-0"><div class="flex items-center gap-2 mb-1 flex-wrap"><span class="font-bold text-slate-800">${esc(h.numero_fisav)}</span>${badge}</div><p class="text-sm font-semibold text-brand-900 uppercase truncate">${esc(h.client)}</p><p class="text-xs text-slate-500 truncate"><i class="fa-solid fa-microchip mr-1"></i>${esc(h.machine)}</p><p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-calendar-day mr-1"></i>${esc(date)} &nbsp;|&nbsp; <i class="fa-solid fa-user-gear mr-1"></i>${esc(techs)} &nbsp;|&nbsp; ${esc(h.total_temps || "")}</p></div>${btn}</div>`;
+    return `<div class="bg-white rounded-xl shadow-sm border border-slate-100 p-4 flex items-center justify-between gap-3"><div class="min-w-0"><div class="flex items-center gap-2 mb-1 flex-wrap"><span class="font-bold text-slate-800">${esc(h.numero_fisav)}</span>${typeBadge}${badge}</div><p class="text-sm font-semibold text-brand-900 uppercase truncate">${esc(h.client)}</p><p class="text-xs text-slate-500 truncate"><i class="fa-solid fa-microchip mr-1"></i>${esc(h.machine)}</p><p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-calendar-day mr-1"></i>${esc(date)} &nbsp;|&nbsp; <i class="fa-solid fa-user-gear mr-1"></i>${esc(techs)} &nbsp;|&nbsp; ${esc(h.total_temps || "")}${h.nb_deplacements ? ` &nbsp;|&nbsp; <i class="fa-solid fa-route mr-1"></i>${esc(h.nb_deplacements)} dépl.` : ""}</p></div>${btn}</div>`;
   }).join("");
 }
 
@@ -1234,6 +1268,173 @@ function renderDocs() {
 if ($("docsSearch")) $("docsSearch").addEventListener("input", (e) => { docSearch = e.target.value; renderDocs(); });
 
 // ---------------------------------------------------------------------
+// ZONES PRÉVENTIF / CURATIF (suivi complet : planifié -> en cours -> à rédiger -> clôturé)
+// ---------------------------------------------------------------------
+// <ZONES>
+// <PURE3>
+function weekEndStr(todayStr) {
+  const d = parseLocal(todayStr); const dow = (d.getDay() + 6) % 7;   // lundi = 0
+  d.setDate(d.getDate() + (6 - dow));
+  return localDateStr(d);
+}
+function monthEndStr(todayStr) { const d = parseLocal(todayStr); return localDateStr(new Date(d.getFullYear(), d.getMonth() + 1, 0)); }
+function prevBucket(i, ctx) {
+  if (i.statut === "Archivé") return "cloture";
+  if (i.statut === "Terminé") return "rediger";
+  if (i.date < ctx.today) return "retard";
+  if (i.date <= ctx.weekEnd) return "semaine";
+  if (i.date <= ctx.monthEnd) return "mois";
+  return "venir";
+}
+function curBucket(i) {
+  if (i.statut === "Archivé") return "clotures";
+  if (i.statut === "Terminé") return "rediger";
+  if (i.multiJours || i.statut === "En cours") return "ouverts";
+  return "planifies";
+}
+// Type d'une fiche : enregistré, sinon déduit du forfait (PREV) ou du diagnostic ("préventive")
+function ficheType(h) {
+  if (h.type_fiche === "Préventif" || h.type_fiche === "Curatif") return h.type_fiche;
+  const diag = h.forfait_diag || h.diagnostic || "";
+  return /^PREV/i.test(h.forfait_ref || "") || /pr[ée]ventive/i.test(diag) ? "Préventif" : "Curatif";
+}
+// </PURE3>
+
+const ZONES = {
+  curatif: {
+    type: "Curatif", archiveKey: "clotures", byClient: false, bucket: (i) => curBucket(i),
+    sections: [["ouverts", "Dossiers ouverts / en cours", "fa-folder-open", "text-orange-600"], ["planifies", "Planifiés", "fa-calendar-day", "text-blue-600"], ["rediger", "À rédiger (fiche)", "fa-file-signature", "text-green-600"]],
+    pills: [["ACTIFS", "Tous actifs"], ["ouverts", "Ouverts"], ["planifies", "Planifiés"], ["rediger", "À rédiger"], ["clotures", "Clôturés"]]
+  },
+  preventif: {
+    type: "Préventif", archiveKey: "cloture", byClient: true, bucket: (i, ctx) => prevBucket(i, ctx),
+    sections: [["retard", "En retard", "fa-triangle-exclamation", "text-red-600"], ["semaine", "Cette semaine", "fa-calendar-week", "text-blue-600"], ["mois", "Ce mois", "fa-calendar-days", "text-slate-600"], ["venir", "À venir", "fa-forward", "text-slate-500"], ["rediger", "À rédiger (fiche)", "fa-file-signature", "text-green-600"]],
+    pills: [["ACTIFS", "Tous actifs"], ["retard", "En retard"], ["semaine", "Cette semaine"], ["mois", "Ce mois"], ["venir", "À venir"], ["rediger", "À rédiger"], ["cloture", "Clôturés"]]
+  }
+};
+const zoneFilter = { curatif: "ACTIFS", preventif: "ACTIFS" };
+const zoneSearch = { curatif: "", preventif: "" };
+
+// Résumé en direct des dossiers multi-jours (écoute du journal de chaque dossier ouvert)
+const passageSummaries = {};
+const passageUnsubs = {};
+
+function syncPassageListeners() {
+  const open = new Set(allInterventions.filter((i) => i.multiJours).map((i) => i.id));
+  Object.keys(passageUnsubs).forEach((id) => { if (!open.has(id)) { passageUnsubs[id](); delete passageUnsubs[id]; delete passageSummaries[id]; } });
+  open.forEach((id) => {
+    if (passageUnsubs[id]) return;
+    passageUnsubs[id] = onSnapshot(collection(db, "interventions", id, "passages"), (snap) => {
+      const ps = snap.docs.map((d) => d.data());
+      const st = dossierStats(ps);
+      let heures = 0, jours = 0;
+      Object.entries(st.totals).forEach(([k, v]) => { if (k.split("||")[1] === "Jour(s)") jours += v; else heures += v; });
+      passageSummaries[id] = { n: ps.length, dep: st.deplacements, heures, jours, last: st.dates[st.dates.length - 1] || "" };
+      applyDossierSummaries();
+    }, onListenError("passages"));
+  });
+}
+
+function dossierSummaryText(id) {
+  const s = passageSummaries[id];
+  if (!s) return "Résumé du journal…";
+  if (s.n === 0) return "Aucun passage saisi";
+  let t = `${s.n} entrée(s) · ${s.dep} déplacement(s)`;
+  if (s.heures > 0) t += ` · ${s.heures} h`;
+  if (s.jours > 0) t += ` · ${s.jours} j`;
+  if (s.last) t += ` · dernier : ${fmtDate(s.last)}`;
+  return t;
+}
+function applyDossierSummaries() {
+  document.querySelectorAll("[data-dossier-sum]").forEach((el) => { el.textContent = dossierSummaryText(el.dataset.dossierSum); });
+}
+
+function zoneCard(i) {
+  const today = localDateStr();
+  const archived = i.statut === "Archivé", done = i.statut === "Terminé";
+  const late = !archived && !done && !i.multiJours && i.date < today;
+  const cfg = late ? statusConfig["En retard"] : archived ? statusConfig["Archivé"] : (statusConfig[i.statut] || statusConfig["Planifié"]);
+  const label = late ? "En retard" : archived ? "Clôturé" : done ? "À rédiger" : i.multiJours ? "Dossier ouvert" : i.statut;
+  const date = i.date ? parseLocal(i.date).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" }) : "";
+  const freq = i.frequence && i.frequence !== "Ponctuel" ? `<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 uppercase">${esc(i.frequence)}</span>` : "";
+  const bcls = "px-3 py-2 text-xs font-bold rounded-lg";
+  let btn;
+  if (archived) btn = `<button data-act="zone-hist" data-client="${esc(i.client)}" class="${bcls} bg-slate-100 text-slate-700 hover:bg-slate-200"><i class="fa-solid fa-box-archive mr-1"></i> Voir les fiches</button>`;
+  else if (done) btn = `<button data-act="zone-fiche" data-id="${esc(i.id)}" class="${bcls} bg-green-500 hover:bg-green-600 text-white"><i class="fa-solid fa-file-signature mr-1"></i> Rédiger la fiche</button>`;
+  else if (i.multiJours) btn = `<button data-act="dossier" data-id="${esc(i.id)}" class="${bcls} bg-brand-500 hover:bg-brand-600 text-white"><i class="fa-solid fa-folder-open mr-1"></i> Ouvrir le dossier</button>`;
+  else btn = `<button data-act="open-intv" data-id="${esc(i.id)}" class="${bcls} bg-brand-500 hover:bg-brand-600 text-white"><i class="fa-solid fa-screwdriver-wrench mr-1"></i> Ouvrir / Valider</button>`;
+  const sum = i.multiJours && !archived ? `<p class="text-xs font-bold text-orange-700 mt-1" data-dossier-sum="${esc(i.id)}"></p>` : "";
+  const panne = i.panne ? `<p class="text-xs text-slate-500 italic mt-1 truncate">${esc(i.panne)}</p>` : "";
+  return `<div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex"><div class="w-1.5 shrink-0" style="background-color:${cfg.border};"></div><div class="p-4 flex-1 min-w-0"><div class="flex items-start justify-between gap-2"><div class="min-w-0"><h3 class="font-bold text-slate-800 uppercase truncate">${esc(i.client)}</h3><p class="text-sm text-slate-600 truncate"><i class="fa-solid fa-microchip mr-1 text-slate-400"></i>${esc(i.machine)}</p></div><span class="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase" style="background-color:${cfg.bg};color:${cfg.text};border:1px solid ${cfg.border};">${esc(label)}</span></div><p class="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1"><span><i class="fa-solid fa-calendar-day mr-1"></i>${esc(date)}</span><span><i class="fa-solid fa-user-gear mr-1"></i>${esc(i.technicien || "")}</span>${freq}</p>${panne}${sum}<div class="mt-3">${btn}</div></div></div>`;
+}
+
+function zoneSectionHTML(def, title, icon, color, items) {
+  if (!items.length) return "";
+  let body;
+  if (def.byClient) {
+    const m = new Map();
+    items.forEach((i) => { if (!m.has(i.client)) m.set(i.client, []); m.get(i.client).push(i); });
+    body = [...m.entries()].map(([client, list]) => `<div class="mb-3"><p class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">${esc(client)} · ${list.length} machine(s)</p><div class="space-y-2">${list.map((x) => zoneCard(x)).join("")}</div></div>`).join("");
+  } else body = `<div class="space-y-2">${items.map((x) => zoneCard(x)).join("")}</div>`;
+  return `<section class="mb-6"><h3 class="text-sm font-bold ${color} uppercase tracking-wider mb-3"><i class="fa-solid ${icon} mr-2"></i>${esc(title)} <span class="text-slate-400">(${items.length})</span></h3>${body}</section>`;
+}
+
+function renderZone(key) {
+  const def = ZONES[key], box = $(`${key}-container`), pillsEl = $(`${key}-pills`);
+  if (!def || !box || !pillsEl) return;
+  const ctx = { today: localDateStr() }; ctx.weekEnd = weekEndStr(ctx.today); ctx.monthEnd = monthEndStr(ctx.today);
+  const q = (zoneSearch[key] || "").trim().toLowerCase();
+  const match = (i) => !q || [i.client, i.machine, i.technicien, i.panne].some((v) => String(v == null ? "" : v).toLowerCase().includes(q));
+  const cmp = (x, y) => String(x.date).localeCompare(String(y.date)) || String(x.client).localeCompare(String(y.client));
+  const active = allInterventions.filter((i) => i.type === def.type && match(i)).sort(cmp);
+  const archivedAll = archivedInterventions.filter((i) => i.type === def.type && match(i)).sort((x, y) => cmp(y, x));
+  const buckets = {};
+  active.forEach((i) => { const k = def.bucket(i, ctx); (buckets[k] = buckets[k] || []).push(i); });
+  const counts = { ACTIFS: active.length };
+  counts[def.archiveKey] = archivedAll.length;
+  def.sections.forEach((s) => { counts[s[0]] = (buckets[s[0]] || []).length; });
+  const cur = zoneFilter[key];
+  pillsEl.innerHTML = def.pills.map(([k, label]) => {
+    const on = cur === k, warn = (k === "retard" || k === "rediger") && counts[k] > 0 && !on;
+    return `<button data-act="zone-pill" data-zone="${key}" data-key="${k}" class="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold border ${on ? "bg-brand-500 text-white border-brand-500" : warn ? "bg-red-50 text-red-700 border-red-200" : "bg-white text-slate-600 border-slate-200"}">${esc(label)} <span class="${on ? "text-blue-100" : "text-slate-400"}">${counts[k] || 0}</span></button>`;
+  }).join("");
+  let html = "";
+  if (cur === "ACTIFS") html = def.sections.map((s) => zoneSectionHTML(def, s[1], s[2], s[3], buckets[s[0]] || [])).join("");
+  else if (cur === def.archiveKey) html = zoneSectionHTML(def, "Clôturés (100 derniers)", "fa-box-archive", "text-slate-500", archivedAll.slice(0, 100));
+  else { const s = def.sections.find((x) => x[0] === cur); if (s) html = zoneSectionHTML(def, s[1], s[2], s[3], buckets[s[0]] || []); }
+  box.innerHTML = html || '<p class="text-slate-400 text-sm italic text-center py-10">Aucune intervention ici.</p>';
+  applyDossierSummaries();
+}
+function renderZones() { renderZone("curatif"); renderZone("preventif"); }
+// </ZONES>
+
+// Compteur rouge "à rédiger" sur les menus Préventif et Curatif
+function updateBadges() {
+  const n = (type) => allInterventions.filter((i) => i.type === type && i.statut === "Terminé").length;
+  const vals = { curatif: n("Curatif"), preventif: n("Préventif") };
+  document.querySelectorAll("[data-badge]").forEach((el) => {
+    const v = vals[el.dataset.badge] || 0;
+    el.textContent = v; el.title = "Fiches à rédiger"; el.classList.toggle("hidden", v === 0);
+  });
+}
+
+function openAddModalFor(type) { openAddModal(); $("formType").value = type; toggleMultiRow(); }
+
+// Fiche d'une intervention terminée : on retrouve son groupe (même client/date/type) comme sur le tableau de bord
+function zoneFiche(id) {
+  const key = Object.keys(groupedInterventionsGlobal).find((k) => groupedInterventionsGlobal[k].machines.some((m) => m.id === id));
+  if (!key) return toast("Intervention introuvable : rechargez la page.", "error");
+  redigerFicheGlobaleTerminee(key);
+}
+
+["curatif", "preventif"].forEach((k) => {
+  const el = $(`${k}-search`);
+  if (el) el.addEventListener("input", (e) => { zoneSearch[k] = e.target.value; renderZone(k); });
+});
+if ($("historiqueMois")) $("historiqueMois").addEventListener("change", (e) => { historiqueMonth = e.target.value; renderHistorique(); });
+if ($("historiqueClient")) $("historiqueClient").addEventListener("change", (e) => { historiqueClient = e.target.value; renderHistorique(); });
+
+// ---------------------------------------------------------------------
 // ÉCOUTEURS DÉLÉGUÉS (remplacent tous les onclick/onsubmit inline dynamiques)
 // ---------------------------------------------------------------------
 document.addEventListener("click", (e) => {
@@ -1263,6 +1464,12 @@ document.addEventListener("click", (e) => {
     case "doc-folder": docPath = [...docPath, el.dataset.name]; return renderDocs();
     case "doc-nav": docPath = el.dataset.path ? el.dataset.path.split("/") : []; docSearch = ""; if ($("docsSearch")) $("docsSearch").value = ""; return renderDocs();
     case "doc-refresh": docFiles = null; return loadDocs();
+    case "zone-pill": zoneFilter[el.dataset.zone] = el.dataset.key; return renderZones();
+    case "zone-new": return openAddModalFor(el.dataset.type);
+    case "zone-fiche": return zoneFiche(id);
+    case "zone-hist": historiqueFilter = el.dataset.client || ""; if ($("historiqueSearch")) $("historiqueSearch").value = historiqueFilter; renderHistorique(); return showView("historique");
+    case "goto": return showView(el.dataset.view);
+    case "hist-type": historiqueType = el.dataset.type; return renderHistorique();
     case "del-piece":
       tempKitPieces = tempKitPieces.filter((p) => !(p.ref === ref && p.nom === nom));
       return afficherPiecesKitTemp();
