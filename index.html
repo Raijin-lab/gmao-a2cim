@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1e3a8a">
     <title>GMAO pro A2CIM - Tableau de bord</title>
 
-    <link rel="stylesheet" href="style.css?v=45">
+    <link rel="stylesheet" href="style.css?v=46">
     <link rel="manifest" href="manifest.json">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -69,6 +69,13 @@
             .sig-block { width: 48%; } .sig-title { margin-bottom: 10px; } .sig-flex { display: flex; align-items: flex-start; gap: 10px; }
             .sig-text { width: 70px; font-size: 12px; line-height: 1.2; }
             .box-client { border: 1px solid black; width: 220px; height: 70px; } .box-a2cim { border: 1px solid black; width: 220px; height: 40px; }
+            /* Fiche longue : mise en page continue, plusieurs pages */
+            body.print-flow-body { display: block !important; height: auto !important; overflow: visible !important; }
+            body.print-flow-body > .flex-1, body.print-flow-body > .fixed { display: none !important; }
+            .print-only.print-flow { display: block !important; position: static !important; height: auto !important; min-height: 285mm; }
+            .print-only.print-flow .travaux-box { display: block !important; flex-grow: 0 !important; }
+            .print-only.print-flow .footer-section { page-break-inside: avoid; break-inside: avoid; margin-top: 15px; }
+            .print-only.print-flow .main-table tr { page-break-inside: avoid; }
         }
     </style>
 </head>
@@ -353,7 +360,7 @@
     <!-- ================= DOCUMENT PDF A IMPRIMER ================= -->
     <div class="print-only">
         <div class="header-box"><div class="header-a2cim-top">A2CIM</div><div class="header-title">Fiche Intervention SAV</div><div class="header-a2cim-bot">A2CIM</div></div>
-        <div class="info-line"><span>NOM TECHNICIEN <span id="p_nom_tech" style="margin-left:50px; font-weight:bold;"></span></span><span>Date de tirage <span id="p_date_tirage"></span> à <span id="p_heure_tirage"></span></span><span>Page : 1</span></div>
+        <div class="info-line"><span>NOM TECHNICIEN <span id="p_nom_tech" style="margin-left:50px; font-weight:bold;"></span></span><span>Date de tirage <span id="p_date_tirage"></span> à <span id="p_heure_tirage"></span></span><span id="p_page">Page : 1</span></div>
         <div class="top-tables">
             <table class="table-left"><tr class="bg-grey"><th>N° FISAV</th><th>Référence</th><th>Date</th></tr><tr><td id="p_fisav"></td><td id="p_ref"></td><td id="p_date"></td></tr></table>
             <table class="table-right"><tr><th class="bg-grey">CLIENT</th><td id="p_client" style="font-weight:bold; font-size:14px;"></td></tr><tr><th class="bg-grey">Machine(s)</th><td id="p_machine" style="font-weight:bold;"></td></tr></table>
@@ -376,6 +383,6 @@
         </div>
     </div>
 
-    <script type="module" src="app.js?v=45"></script>
+    <script type="module" src="app.js?v=46"></script>
 </body>
 </html>

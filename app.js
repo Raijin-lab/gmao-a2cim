@@ -891,6 +891,13 @@ window.prepareAndPrint = async function () {
     if (!confirm("L'historique n'a pas pu être enregistré (" + (err.code || err.message) + ").\nImprimer quand même ?")) { resetBtn(); return; }
   }
 
+  // Fiche longue (ex : dossier multi-jours détaillé) : mise en page continue sur plusieurs pages
+  const estLines = travaux.split("\n").reduce((n, l) => n + Math.max(1, Math.ceil(l.length / 90)), 0) + detailTechniciens.length * 2;
+  const flow = estLines > 32;
+  document.querySelector(".print-only").classList.toggle("print-flow", flow);
+  document.body.classList.toggle("print-flow-body", flow);
+  $("p_page").textContent = flow ? "Page : 1 (suite page suivante)" : "Page : 1";
+
   const originalTitle = document.title;
   document.title = `Fiche_${fisavRaw.replace(/[^a-zA-Z0-9]/g, "_")}_${clientRaw.replace(/[^a-zA-Z0-9]/g, "_")}`;
   window.addEventListener("afterprint", async () => {
@@ -944,10 +951,12 @@ function renderHistorique() {
     const techs = (h.techniciens_intervenants || []).map((t) => t.nom).join(", ");
     const canEdit = isAdmin || h.uid === currentUser.uid;
     const typ = ficheType(h);
+    const reopenId = (Array.isArray(h.interventions_ids) ? h.interventions_ids : []).find((x) => archivedInterventions.some((z) => z.id === x && z.multiJours));
+    const reopen = reopenId ? `<button data-act="dossier-restore" data-id="${esc(reopenId)}" class="shrink-0 px-3 py-2 bg-orange-100 hover:bg-orange-200 text-orange-800 text-xs font-bold rounded-lg"><i class="fa-solid fa-rotate-left mr-1"></i> Rouvrir le dossier</button>` : "";
     const typeBadge = `<span class="text-[10px] font-bold px-2 py-0.5 rounded uppercase ${typ === "Préventif" ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"}">${typ}</span>`;
     const badge = h.modifie_par ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 uppercase">Modifiée</span>' : "";
     const btn = canEdit ? `<button data-act="open-fiche" data-id="${esc(h.id)}" class="shrink-0 px-3 py-2 bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold rounded-lg"><i class="fa-solid fa-pen-to-square mr-1"></i> Modifier</button>` : "";
-    return `<div class="bg-white rounded-xl shadow-sm border border-slate-100 p-4 flex items-center justify-between gap-3"><div class="min-w-0"><div class="flex items-center gap-2 mb-1 flex-wrap"><span class="font-bold text-slate-800">${esc(h.numero_fisav)}</span>${typeBadge}${badge}</div><p class="text-sm font-semibold text-brand-900 uppercase truncate">${esc(h.client)}</p><p class="text-xs text-slate-500 truncate"><i class="fa-solid fa-microchip mr-1"></i>${esc(h.machine)}</p><p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-calendar-day mr-1"></i>${esc(date)} &nbsp;|&nbsp; <i class="fa-solid fa-user-gear mr-1"></i>${esc(techs)} &nbsp;|&nbsp; ${esc(h.total_temps || "")}${h.nb_deplacements ? ` &nbsp;|&nbsp; <i class="fa-solid fa-route mr-1"></i>${esc(h.nb_deplacements)} dépl.` : ""}</p></div>${btn}</div>`;
+    return `<div class="bg-white rounded-xl shadow-sm border border-slate-100 p-4 flex items-center justify-between gap-3"><div class="min-w-0"><div class="flex items-center gap-2 mb-1 flex-wrap"><span class="font-bold text-slate-800">${esc(h.numero_fisav)}</span>${typeBadge}${badge}</div><p class="text-sm font-semibold text-brand-900 uppercase truncate">${esc(h.client)}</p><p class="text-xs text-slate-500 truncate"><i class="fa-solid fa-microchip mr-1"></i>${esc(h.machine)}</p><p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-calendar-day mr-1"></i>${esc(date)} &nbsp;|&nbsp; <i class="fa-solid fa-user-gear mr-1"></i>${esc(techs)} &nbsp;|&nbsp; ${esc(h.total_temps || "")}${h.nb_deplacements ? ` &nbsp;|&nbsp; <i class="fa-solid fa-route mr-1"></i>${esc(h.nb_deplacements)} dépl.` : ""}</p></div><div class="flex flex-col gap-2 shrink-0">${btn}${reopen}</div></div>`;
   }).join("");
 }
 
@@ -1009,20 +1018,39 @@ function dossierStats(passages) {
   return { dates, deplacements: dates.length, totals };
 }
 
+const fmtQty = (q, unite) => `${String(Math.round((Number(q) || 0) * 100) / 100).replace(".", ",")} ${unite === "Jour(s)" ? "j" : "h"}`;
+function fmtTotals(list) {
+  let h = 0, j = 0;
+  list.forEach((p) => { if (p.unite === "Jour(s)") j += Number(p.qte) || 0; else h += Number(p.qte) || 0; });
+  return [h ? fmtQty(h, "Heure(s)") : "", j ? fmtQty(j, "Jour(s)") : ""].filter(Boolean).join(" + ") || "0 h";
+}
+
 function buildDossierTravaux(intv, passages, mode) {
   const st = dossierStats(passages);
+  const byTech = (x, y) => String(x.tech).localeCompare(String(y.tech), "fr");
   let t = mode === "final" ? "" : "[FICHE D'ÉTAPE : intervention en cours]\n";
   t += "Intervention curative réalisée sur plusieurs jours.\n";
   if (intv.panne) t += `Motif : ${intv.panne}\n`;
-  t += `Machine : ${intv.machine}\n\n📌 JOURNAL DES TRAVAUX :\n`;
+  t += `Machine : ${intv.machine}\n`;
+
+  // Détail demandé par le client : heures de chaque technicien, jour par jour
+  t += "\nHEURES PAR JOUR ET PAR TECHNICIEN :\n";
+  st.dates.forEach((date) => {
+    const day = passages.filter((p) => p.date === date).sort(byTech);
+    t += `${fmtDate(date)} : ${day.map((p) => `${p.tech} ${fmtQty(p.qte, p.unite)}`).join(" · ")}  (total ${fmtTotals(day)})\n`;
+  });
+  const techs = [...new Set(passages.map((p) => p.tech))].sort((x, y) => String(x).localeCompare(String(y), "fr"));
+  t += `TOTAL : ${techs.map((n) => `${n} ${fmtTotals(passages.filter((p) => p.tech === n))}`).join(" · ")}  (cumul ${fmtTotals(passages)})\n`;
+
+  t += "\n📌 JOURNAL DES TRAVAUX :\n";
   st.dates.forEach((date) => {
     const byText = new Map();
-    passages.filter((p) => p.date === date).forEach((p) => {
+    passages.filter((p) => p.date === date).sort(byTech).forEach((p) => {
       const k = String(p.travaux || "").trim();
       if (!byText.has(k)) byText.set(k, []);
       byText.get(k).push(p.tech);
     });
-    byText.forEach((techs, text) => { t += `\n• ${fmtDate(date)} (${techs.join(", ")}) :\n${text}\n`; });
+    byText.forEach((names, text) => { t += `\n• ${fmtDate(date)} (${names.join(", ")}) :\n${text}\n`; });
   });
   t += `\nNombre de déplacements : ${st.deplacements}`;
   return t;
@@ -1150,13 +1178,29 @@ async function supprimerDossier(id) {
   } catch (err) { console.error(err); toast("Suppression refusée : " + (err.code || err.message), "error"); }
 }
 
+// Rouvre un dossier clôturé : il redevient "en cours" avec tout son journal de passages
+async function restoreDossier(id) {
+  if (!confirm("Rouvrir ce dossier ?\n\nIl redevient « en cours » avec tout son journal de passages. Vous pourrez corriger les saisies puis régénérer la fiche.")) return;
+  await safe(() => updateDoc(doc(db, "interventions", id), { statut: "En cours" }), "Dossier rouvert : retrouvez-le dans Curatif > Ouverts.");
+}
+
 // Remplit l'éditeur de fiche avec le journal : une seule fiche, toute l'équipe, heures cumulées, nb de déplacements.
 function genererFicheDossier(id, mode) {
   const intv = allInterventions.find((i) => i.id === id); if (!intv) return;
   const ps = dossierData.id === id ? dossierData.passages : [];
   if (ps.length === 0) return toast("Ajoutez au moins un passage avant de générer la fiche.", "error");
   const st = dossierStats(ps);
-  $("input_fisav").value = ""; $("input_reference").value = "";
+  // Dossier rouvert après une première fiche finale : on propose de mettre à jour cette fiche (plus de doublon)
+  let existing = null;
+  if (mode === "final") {
+    const found = historiqueDB.find((h) => Array.isArray(h.interventions_ids) && h.interventions_ids.includes(id));
+    if (found && confirm(`Une fiche existe déjà pour ce dossier (N° FISAV ${found.numero_fisav}).\n\nOK : mettre à jour cette fiche (l'ancienne version reste conservée).\nAnnuler : créer une nouvelle fiche.`)) existing = found;
+  }
+  const now = new Date();
+  $("input_date_tirage").value = localDateStr(now);
+  $("input_heure_tirage").value = `${p2(now.getHours())}:${p2(now.getMinutes())}:${p2(now.getSeconds())}`;
+  $("input_fisav").value = existing ? existing.numero_fisav || "" : "";
+  $("input_reference").value = existing ? existing.reference_intervention || "" : "";
   $("input_client").value = intv.client; $("input_machine").value = intv.machine;
   $("input_date").value = st.dates[st.dates.length - 1];
   $("input_forfait_ref").value = "DEPAN"; $("input_forfait_nom").value = "SAV-Depannage";
@@ -1165,10 +1209,10 @@ function genererFicheDossier(id, mode) {
   $("input_deplacements").value = st.deplacements;
   $("fiche-tech-list").innerHTML = Object.entries(st.totals).map(([k, v]) => { const [tech, unite] = k.split("||"); return techRowHTML(tech, v, unite); }).join("");
   window.__pendingArchive = mode === "final" ? [id] : [];
-  setEditMode(null);
+  setEditMode(existing ? existing.id : null);
   closeDossier();
   showView("fiches");
-  toast(mode === "final" ? "Fiche finale prête : renseignez le N° FISAV puis imprimez (le dossier sera archivé ensuite)." : "Fiche d'étape prête : renseignez le N° FISAV puis imprimez.", "success");
+  toast(existing ? "Fiche mise à jour prête : vérifiez puis imprimez (l'ancienne version est conservée)." : mode === "final" ? "Fiche finale prête : renseignez le N° FISAV puis imprimez (le dossier sera archivé ensuite)." : "Fiche d'étape prête : renseignez le N° FISAV puis imprimez.", "success");
 }
 
 // ---------------------------------------------------------------------
@@ -1359,7 +1403,7 @@ function zoneCard(i) {
   const freq = i.frequence && i.frequence !== "Ponctuel" ? `<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 uppercase">${esc(i.frequence)}</span>` : "";
   const bcls = "px-3 py-2 text-xs font-bold rounded-lg";
   let btn;
-  if (archived) btn = `<button data-act="zone-hist" data-client="${esc(i.client)}" class="${bcls} bg-slate-100 text-slate-700 hover:bg-slate-200"><i class="fa-solid fa-box-archive mr-1"></i> Voir les fiches</button>`;
+  if (archived) btn = (i.multiJours ? `<button data-act="dossier-restore" data-id="${esc(i.id)}" class="${bcls} bg-orange-500 hover:bg-orange-600 text-white mr-2"><i class="fa-solid fa-rotate-left mr-1"></i> Rouvrir le dossier</button>` : "") + `<button data-act="zone-hist" data-client="${esc(i.client)}" class="${bcls} bg-slate-100 text-slate-700 hover:bg-slate-200"><i class="fa-solid fa-box-archive mr-1"></i> Voir les fiches</button>`;
   else if (done) btn = `<button data-act="zone-fiche" data-id="${esc(i.id)}" class="${bcls} bg-green-500 hover:bg-green-600 text-white"><i class="fa-solid fa-file-signature mr-1"></i> Rédiger la fiche</button>`;
   else if (i.multiJours) btn = `<button data-act="dossier" data-id="${esc(i.id)}" class="${bcls} bg-brand-500 hover:bg-brand-600 text-white"><i class="fa-solid fa-folder-open mr-1"></i> Ouvrir le dossier</button>`;
   else btn = `<button data-act="open-intv" data-id="${esc(i.id)}" class="${bcls} bg-brand-500 hover:bg-brand-600 text-white"><i class="fa-solid fa-screwdriver-wrench mr-1"></i> Ouvrir / Valider</button>`;
@@ -1461,6 +1505,7 @@ document.addEventListener("click", (e) => {
     case "passage-del": return supprimerPassage(el.dataset.did, id);
     case "dossier-fiche": return genererFicheDossier(id, el.dataset.mode);
     case "dossier-delete": return supprimerDossier(id);
+    case "dossier-restore": return restoreDossier(id);
     case "doc-folder": docPath = [...docPath, el.dataset.name]; return renderDocs();
     case "doc-nav": docPath = el.dataset.path ? el.dataset.path.split("/") : []; docSearch = ""; if ($("docsSearch")) $("docsSearch").value = ""; return renderDocs();
     case "doc-refresh": docFiles = null; return loadDocs();
